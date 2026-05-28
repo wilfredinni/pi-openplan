@@ -18,6 +18,7 @@
 	],
 	"files": [
 		"extensions",
+		"CHANGELOG.md",
 		"README.md",
 		"LICENSE"
 	],
