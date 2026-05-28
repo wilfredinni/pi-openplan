@@ -25,7 +25,8 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
+import { getMarkdownTheme, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	createPlanFile,
@@ -273,6 +274,16 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
 
+	// ── Plan Content Renderer ──────────────────────────────────────────
+
+	pi.registerMessageRenderer("plan-content", (message, _options, theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
 	// ── CLI Flag ────────────────────────────────────────────────────────
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -504,11 +515,35 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					params.content,
 					metadata,
 				);
+				// Stripe any YAML frontmatter the agent may have included in the content
+				const { body: cleanBody } = parseFrontmatter(params.content);
+				const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
+				const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
+				const statusIcon =
+					metadata.status === "draft"
+						? "📝"
+						: metadata.status === "in_progress"
+							? "🔄"
+							: metadata.status === "done"
+								? "✅"
+								: "📋";
+				const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
+
+				// Display the plan as a rendered markdown message in the conversation
+				pi.sendMessage(
+					{
+						customType: "plan-content",
+						content: `${titleHeading}${metaLine}\n${cleanBody}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Plan saved: ${result.path}\n\nUse plan_read("${filename.replace(/^\d{4}-\d{2}-\d{2}-/, "")}") to review it later.`,
+							text: `Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
 						},
 					],
 					details: { path: result.path, filename },

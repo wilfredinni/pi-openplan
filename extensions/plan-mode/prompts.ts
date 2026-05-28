@@ -65,6 +65,8 @@ any loose ends before implementation begins.
 ### Step 6: Present Summary
 - Give the user a concise summary of the plan
 - Highlight key decisions, phases, risks
+- The full plan is visible above in the plan_write tool output — do NOT
+  repeat the entire plan verbatim; use it as reference for your summary
 - Do NOT offer to execute the plan — the user will use \`/execute_plan\` to execute it
 - Do NOT ask the user what to do next; just present the summary and stop
 
@@ -74,6 +76,10 @@ any loose ends before implementation begins.
 
 Save plans to \`.pi/plans/YYYY-MM-DD-{slug}.md\` using the plan_write tool.
 
+The plan_write tool output renders with terminal styling automatically:
+headings, phases, checkboxes, code blocks, and tables are all formatted.
+Keep the structure clean and use the template below.
+
 \`\`\`markdown
 ---
 title: "Feature Name"
@@ -82,46 +88,41 @@ created: "ISO timestamp"
 type: feature | fix | refactor | chore
 ---
 
-# [Feature Name] Implementation Plan
+# Feature Name
 
 ## Overview
-
 [What we're building and why — 2-3 sentences]
 
 ## Current State
-
 [How things work today, with code references like \`file.ts:45\`]
 
 ## Desired End State
-
 [What success looks like — specific and measurable]
 
 ## Out of Scope
-
 [Explicit boundaries — what we're NOT doing]
 
 ## Approach
-
 [High-level strategy — why this over alternatives]
 
 ---
 
-## Phase 1: [Descriptive Name]
+## Phase 1: Descriptive Name
 
 ### Changes
-- **\`path/to/file.ts\`**: [what changes and why]
-- **\`path/to/other.ts\`**: [what changes and why]
+- **\`path/to/file.ts\`** — what changes and why
+- **\`path/to/other.ts\`** — what changes and why
 
 ### Verification
 - [ ] Build: \`command\`
 - [ ] Tests: \`command\`
-- [ ] Manual: [specific behavior to verify]
+- [ ] Manual: specific behavior to verify
 
 ⏸️ **PAUSE** — Verify before Phase 2
 
 ---
 
-## Phase 2: [Descriptive Name]
+## Phase 2: Descriptive Name
 ...
 
 ---
