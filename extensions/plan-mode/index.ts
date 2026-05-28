@@ -270,6 +270,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
+	let planJustWritten = false;
 
 	// ── CLI Flag ────────────────────────────────────────────────────────
 	pi.registerFlag("plan", {
@@ -432,6 +433,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					created: new Date().toISOString(),
 					type: (params.type as PlanMetadata["type"]) ?? "feature",
 				};
+				planJustWritten = true;
 				const result = createPlanFile(
 					ctx.cwd,
 					filename,
@@ -695,15 +697,18 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			);
 		}
 
-		// Plan ready — no interactive prompt; user controls execution by toggling plan mode
-		pi.sendMessage(
-			{
-				customType: "plan-ready",
-				content: "Plan is ready. Use `/plan` to disable plan mode when you're ready to execute.",
-				display: true,
-			},
-			{ triggerTurn: false },
-		);
+		// Only show "plan-ready" when a plan was actually written this turn
+		if (planJustWritten) {
+			planJustWritten = false;
+			pi.sendMessage(
+				{
+					customType: "plan-ready",
+					content: "Plan is ready. Use `/plan` to disable plan mode when you're ready to execute.",
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+		}
 	});
 
 	// ── Event: Restore State on Session Start ───────────────────────────
