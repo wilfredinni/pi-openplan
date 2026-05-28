@@ -7,6 +7,7 @@
  * Commands:
  *   /plan           — Toggle plan mode
  *   /plans          — List saved plans
+ *   /execute_plan   — Exit plan mode and execute a saved plan
  *   Ctrl+Alt+P      — Toggle plan mode
  *
  * Flags:
@@ -32,6 +33,7 @@ import {
 	type PlanMetadata,
 	readPlanFile,
 	slugify,
+	updatePlanStatus,
 } from "./plan-files.ts";
 import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
 
@@ -270,7 +272,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
-	let planJustWritten = false;
 
 	// ── CLI Flag ────────────────────────────────────────────────────────
 	pi.registerFlag("plan", {
@@ -387,6 +388,70 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("execute_plan", {
+		description:
+			"Exit plan mode and execute a saved plan. Optionally provide a plan name as argument.",
+		handler: async (args, ctx) => {
+			// Exit plan mode if active
+			if (planModeEnabled) {
+				planModeEnabled = false;
+				executionMode = true;
+				pi.setActiveTools(NORMAL_MODE_TOOLS);
+			} else {
+				executionMode = true;
+			}
+
+			todoItems = [];
+			let planContent = "";
+			const planName = args?.trim();
+
+			if (planName) {
+				try {
+					const plan = readPlanFile(ctx.cwd, planName);
+					if (plan) {
+						planContent = plan.content;
+						updatePlanStatus(ctx.cwd, planName, "in_progress");
+						const extracted = extractTodosFromPlan(plan.content);
+						if (extracted.length > 0) {
+							todoItems = extracted;
+						}
+					} else {
+						ctx.ui.notify(
+							`No plan found matching "${planName}". Entering execution mode without a plan.`,
+							"warning",
+						);
+					}
+				} catch (err) {
+					ctx.ui.notify(
+						`Failed to read plan: ${err instanceof Error ? err.message : String(err)}`,
+						"error",
+					);
+				}
+			}
+
+			updateUI(ctx);
+			persistState();
+
+			// Record execution start for resume tracking
+			pi.appendEntry("plan-mode-execute", {
+				planName: planName || null,
+				hasTodos: todoItems.length > 0,
+			});
+
+			// Send user message to execute the plan
+			if (planContent) {
+				const planTitle = planContent.match(/^#[\s]+(.+)/m)?.[1] || "Plan";
+				pi.sendUserMessage(
+					`Execute the plan: **${planTitle}**\n\n${planContent}\n\nFollow each phase in order. After completing each step, include a [DONE:n] tag matching the phase number. Report progress after each phase.`,
+				);
+			} else {
+				pi.sendUserMessage(
+					"Execute the plan. Follow all phases in order and mark steps with [DONE:n] when completed.",
+				);
+			}
+		},
+	});
+
 	// ── Shortcut ────────────────────────────────────────────────────────
 
 	pi.registerShortcut(Key.ctrlAlt("p"), {
@@ -433,7 +498,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					created: new Date().toISOString(),
 					type: (params.type as PlanMetadata["type"]) ?? "feature",
 				};
-				planJustWritten = true;
 				const result = createPlanFile(
 					ctx.cwd,
 					filename,
@@ -691,19 +755,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				{
 					customType: "plan-todo-list",
 					content: `**Plan Steps (${todoItems.length}):**\n\n${todoListText}`,
-					display: true,
-				},
-				{ triggerTurn: false },
-			);
-		}
-
-		// Only show "plan-ready" when a plan was actually written this turn
-		if (planJustWritten) {
-			planJustWritten = false;
-			pi.sendMessage(
-				{
-					customType: "plan-ready",
-					content: "Plan is ready. Use `/plan` to disable plan mode when you're ready to execute.",
 					display: true,
 				},
 				{ triggerTurn: false },
