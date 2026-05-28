@@ -155,11 +155,12 @@ Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The
 1. **Toggle on**: `/plan` or `Ctrl+Alt+P`
 2. **Explore**: Read files, search code, research approaches (all read-only)
 3. **Plan**: The LLM creates a structured plan using `plan_write` with phases, verification steps, and risks
-4. **Review**: The LLM presents the plan and asks what to do next
-5. **Execute**: Select "Execute the plan" — plan mode exits, execution begins
-6. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
-7. **Verify**: At each ⏸️ pause point, review before continuing
-8. **Complete**: When all steps are done, the extension announces completion
+4. **Review**: The LLM presents the plan summary and stops — no prompts or choices
+5. **Toggle off**: Use `/plan` to disable plan mode when ready to execute
+6. **Execute**: Ask the agent to implement the plan
+7. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
+8. **Verify**: At each ⏸️ pause point, review before continuing
+9. **Complete**: When all steps are done, the extension announces completion
 
 ## Development
 

@@ -65,7 +65,8 @@ any loose ends before implementation begins.
 ### Step 6: Present Summary
 - Give the user a concise summary of the plan
 - Highlight key decisions, phases, risks
-- Ask if they want to execute, refine, or stay in plan mode
+- Do NOT offer to execute the plan — execution happens outside plan mode
+- Do NOT ask the user what to do next; just present the summary and stop
 
 ---
 
@@ -169,6 +170,9 @@ Always run subagents async so you can continue other work in parallel.
 - You CANNOT use: write, edit (except via plan_write for plan files)
 - Bash is restricted to read-only commands (no rm, mv, npm install, git push, etc.)
 - Do NOT make any changes to project source files
+- If the user asks you to implement, build, or execute the plan:
+  say "You're in plan mode. Disable it first with /plan, then ask me to execute."
+- Do NOT offer to execute the plan or ask what the user wants to do next
 `;
 
 export const EXECUTION_MODE_PROMPT = `[EXECUTING PLAN — Full tool access enabled]

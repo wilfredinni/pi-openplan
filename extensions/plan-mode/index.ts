@@ -695,61 +695,15 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			);
 		}
 
-		// Prompt for next action
-		const options = [
-			todoItems.length > 0
-				? "Execute the plan (phase by phase)"
-				: "Execute the plan",
-			"Stay in plan mode (refine)",
-			"Ask a clarifying question",
-			"Exit plan mode",
-		];
-
-		const choice = await ctx.ui.select("Plan mode — what next?", options);
-
-		if (choice?.startsWith("Execute")) {
-			planModeEnabled = false;
-			executionMode = todoItems.length > 0;
-			pi.setActiveTools(NORMAL_MODE_TOOLS);
-			updateUI(ctx);
-			persistState();
-
-			const execMessage =
-				todoItems.length > 0
-					? `Execute the plan phase by phase. Start with Phase 1: ${todoItems[0].text}\n\nAfter completing each phase, include a [DONE:n] tag and pause at ⏸️ markers to verify before continuing.`
-					: "Execute the plan you just created. Follow the phases in order, marking each complete with [DONE:n] tags.";
-
-			pi.sendMessage(
-				{
-					customType: "plan-mode-execute",
-					content: execMessage,
-					display: true,
-				},
-				{ triggerTurn: true },
-			);
-		} else if (choice === "Stay in plan mode (refine)") {
-			const refinement = await ctx.ui.editor(
-				"What would you like to refine or explore further?",
-				"",
-			);
-			if (refinement?.trim()) {
-				pi.sendUserMessage(refinement.trim(), { deliverAs: "steer" });
-			}
-		} else if (choice === "Ask a clarifying question") {
-			const question = await ctx.ui.editor(
-				"What question do you have for me?",
-				"",
-			);
-			if (question?.trim()) {
-				// Send the question as a user response, keeping plan mode active
-				pi.sendUserMessage(
-					`[User response to plan mode question]: ${question.trim()}`,
-					{ deliverAs: "steer" },
-				);
-			}
-		} else if (choice === "Exit plan mode") {
-			exitPlanMode(ctx);
-		}
+		// Plan ready — no interactive prompt; user controls execution by toggling plan mode
+		pi.sendMessage(
+			{
+				customType: "plan-ready",
+				content: "Plan is ready. Use `/plan` to disable plan mode when you're ready to execute.",
+				display: true,
+			},
+			{ triggerTurn: false },
+		);
 	});
 
 	// ── Event: Restore State on Session Start ───────────────────────────
