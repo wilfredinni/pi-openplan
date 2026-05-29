@@ -213,3 +213,110 @@ export function getPlanVersion(cwd: string, filename: string): number {
 	if (!plan) return 0;
 	return plan.metadata.version ?? 1;
 }
+
+/**
+ * Load custom plan template from .pi/plan-template.md if it exists.
+ * Falls back to null (caller should use default).
+ */
+export function loadCustomTemplate(cwd: string): string | null {
+	const templatePath = path.join(cwd, ".pi", "plan-template.md");
+	try {
+		if (fs.existsSync(templatePath)) {
+			return fs.readFileSync(templatePath, "utf-8");
+		}
+	} catch {
+		// Ignore read errors
+	}
+	return null;
+}
+
+/**
+ * Save a plan version to the history directory.
+ * Returns the path to the saved version file.
+ */
+export function savePlanVersion(
+	cwd: string,
+	filename: string,
+	content: string,
+	metadata: PlanMetadata,
+): string {
+	const historyDir = path.join(cwd, PLANS_DIR, "history");
+	fs.mkdirSync(historyDir, { recursive: true });
+
+	const safeName = sanitizeFilename(filename);
+	const versionFile = `${safeName}.v${metadata.version}.md`;
+	const versionPath = path.join(historyDir, versionFile);
+
+	const fullContent = serializeFrontmatter(metadata) + content;
+	fs.writeFileSync(versionPath, fullContent, "utf-8");
+
+	return versionPath;
+}
+
+/**
+ * List version history for a plan.
+ */
+export function listPlanVersions(
+	cwd: string,
+	filename: string,
+): { version: number; file: string; timestamp: string }[] {
+	const historyDir = path.join(cwd, PLANS_DIR, "history");
+	const safeName = sanitizeFilename(filename);
+	const versions: { version: number; file: string; timestamp: string }[] = [];
+
+	try {
+		if (!fs.existsSync(historyDir)) return versions;
+
+		const files = fs.readdirSync(historyDir);
+		const pattern = new RegExp(`^${safeName}.v(d+).md$`);
+
+		for (const file of files) {
+			const match = file.match(pattern);
+			if (match) {
+				const version = parseInt(match[1], 10);
+				const fullPath = path.join(historyDir, file);
+				const stat = fs.statSync(fullPath);
+				versions.push({
+					version,
+					file,
+					timestamp: stat.mtime.toISOString(),
+				});
+			}
+		}
+	} catch {
+		// Ignore
+	}
+
+	return versions.sort((a, b) => b.version - a.version);
+}
+
+/**
+ * Build a dependency graph from plan metadata.
+ * Returns a map of plan filename to list of dependencies and blockers.
+ */
+export interface PlanDeps {
+	filename: string;
+	title: string;
+	dependsOn: string[];
+	blocks: string[];
+	status: PlanMetadata["status"];
+}
+
+export function getDependencyGraph(cwd: string): PlanDeps[] {
+	const allPlans = listPlans(cwd);
+	return allPlans.map((plan) => ({
+		filename: plan.filename,
+		title: plan.metadata.title,
+		dependsOn:
+			(plan.metadata as PlanMetadata & { depends_on?: string }).depends_on
+				?.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean) ?? [],
+		blocks:
+			(plan.metadata as PlanMetadata & { blocks?: string }).blocks
+				?.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean) ?? [],
+		status: plan.metadata.status,
+	}));
+}

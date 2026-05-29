@@ -33,8 +33,18 @@ import {
 import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
+	buildMemoryBankPrompt,
+	type MemoryBankFile,
+	readAllMemoryBankFiles,
+	readMemoryBankFile,
+	writeMemoryBankFile,
+} from "./memory-bank.ts";
+import {
 	createPlanFile,
+	getDependencyGraph,
 	listPlans,
+	listPlanVersions,
+	loadCustomTemplate,
 	type PlanMetadata,
 	readPlanFile,
 	slugify,
@@ -632,6 +642,65 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("plan_models", {
+		description:
+			"Configure models for plan and execute modes. Usage: /plan_models plan=<model> execute=<model>",
+		handler: async (args, ctx) => {
+			// Parse args like "plan=model1 execute=model2"
+			const parts = (args ?? "").trim().split(/\s+/);
+			if (parts.length === 0 || parts[0] === "") {
+				ctx.ui.notify(
+					"Current model settings. To change: /plan_models plan=<model> execute=<model>",
+					"info",
+				);
+				return;
+			}
+
+			const planModelValue = parts
+				.find((p) => p.startsWith("plan="))
+				?.slice("plan=".length);
+			const executeModelValue = parts
+				.find((p) => p.startsWith("execute="))
+				?.slice("execute=".length);
+
+			if (planModelValue || executeModelValue) {
+				pi.appendEntry("plan-model-preferences", {
+					planModel: planModelValue || null,
+					executeModel: executeModelValue || null,
+				});
+				ctx.ui.notify(
+					`Models updated. Plan: ${planModelValue ?? "default"}, Execute: ${executeModelValue ?? "default"}`,
+					"info",
+				);
+			}
+		},
+	});
+
+	pi.registerCommand("plan_deps", {
+		description: "Show dependency graph of all plans",
+		handler: async (_args, ctx) => {
+			const deps = getDependencyGraph(ctx.cwd);
+			if (deps.length === 0) {
+				ctx.ui.notify("No plans found.", "info");
+				return;
+			}
+
+			const lines = deps.map((p) => {
+				const depends =
+					p.dependsOn.length > 0
+						? `depends on: ${p.dependsOn.join(", ")}`
+						: "no dependencies";
+				const blocks =
+					p.blocks.length > 0
+						? `blocks: ${p.blocks.join(", ")}`
+						: "blocks nothing";
+				return `• **${p.filename}** [${p.status}] — ${p.title}\n  ${depends}\n  ${blocks}`;
+			});
+
+			ctx.ui.notify(`Dependency Graph:\n\n${lines.join("\n")}`, "info");
+		},
+	});
+
 	pi.registerCommand("plan_revise", {
 		description:
 			"Load an existing plan and re-enter plan mode to revise it. Provide a plan name as argument.",
@@ -986,6 +1055,149 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	// ── Memory Bank Tools ─────────────────────────────────────────────
+
+	pi.registerTool({
+		name: "memory_read",
+		label: "Memory Read",
+		description:
+			"Read a memory bank file (context.md, system-patterns.md, progress.md) from the project root. If no filename provided, lists all available memory bank files.",
+		promptSnippet:
+			"Read memory bank files for persistent project context across sessions",
+		parameters: Type.Object({
+			filename: Type.Optional(
+				Type.String({
+					description:
+						"Optional: specific file to read (context.md, system-patterns.md, progress.md)",
+				}),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				if (params.filename) {
+					const entry = readMemoryBankFile(
+						ctx.cwd,
+						params.filename as MemoryBankFile,
+					);
+					if (!entry.exists) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Memory bank file "${params.filename}" not found. Available files: ${readAllMemoryBankFiles(
+										ctx.cwd,
+									)
+										.map((e) => e.filename)
+										.join(", ")}`,
+								},
+							],
+							details: {},
+						};
+					}
+					return {
+						content: [{ type: "text", text: entry.content }],
+						details: { filename: entry.filename },
+					};
+				}
+
+				// List all available memory bank files
+				const entries = readAllMemoryBankFiles(ctx.cwd);
+				if (entries.length === 0) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "No memory bank files found. Create context.md, system-patterns.md, or progress.md in the project root.",
+							},
+						],
+						details: { files: [] },
+					};
+				}
+				const list = entries
+					.map((e) => `- **${e.filename}** (${e.content.length} chars)`)
+					.join("\n");
+				return {
+					content: [
+						{
+							type: "text",
+							text: `# Memory Bank Files\n\n${list}`,
+						},
+					],
+					details: { files: entries.map((e) => e.filename) },
+				};
+			} catch (err: unknown) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Failed to read memory bank: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					details: {},
+					isError: true,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "memory_write",
+		label: "Memory Write",
+		description:
+			"Write or update a memory bank file (context.md, system-patterns.md, progress.md) in the project root. Use for persisting project context across sessions.",
+		promptSnippet: "Update memory bank files to persist project context",
+		parameters: Type.Object({
+			filename: Type.String({
+				description:
+					"File to write: context.md, system-patterns.md, or progress.md",
+			}),
+			content: Type.String({
+				description: "Full content of the memory bank file (markdown)",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const filename = params.filename as MemoryBankFile;
+				const validFiles = ["context.md", "system-patterns.md", "progress.md"];
+				if (!validFiles.includes(filename)) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Invalid filename "${filename}". Must be one of: ${validFiles.join(", ")}`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+
+				writeMemoryBankFile(ctx.cwd, filename, params.content);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Memory bank file updated: ${filename}`,
+						},
+					],
+					details: { filename },
+				};
+			} catch (err: unknown) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Failed to write memory bank: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					details: {},
+					isError: true,
+				};
+			}
+		},
+	});
+
 	// ── Plan Management Tools ───────────────────────────────────────────
 
 	pi.registerTool({
@@ -1131,6 +1343,63 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerTool({
+		name: "plan_history",
+		label: "Plan History",
+		description:
+			"List version history for a plan or a specific saved plan. Optionally show the diff between versions.",
+		promptSnippet: "Show version history for a plan",
+		parameters: Type.Object({
+			filename: Type.String({
+				description: "Plan filename or partial name to show history for",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const versions = listPlanVersions(ctx.cwd, params.filename);
+				if (versions.length === 0) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `No version history found for "${params.filename}".`,
+							},
+						],
+						details: { versions: [] },
+					};
+				}
+
+				const list = versions
+					.map(
+						(v) =>
+							`- **v${v.version}** — ${v.timestamp.slice(0, 10)} (${v.file})`,
+					)
+					.join("\n");
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `# Version History: ${params.filename}\n\n${list}`,
+						},
+					],
+					details: { versions },
+				};
+			} catch (err: unknown) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Failed to list plan history: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					details: {},
+					isError: true,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
 		name: "plan_list",
 		label: "List Plans",
 		description:
@@ -1200,12 +1469,14 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	// ── Event: Inject System Prompts ────────────────────────────────────
 
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const memoryBankPrompt = buildMemoryBankPrompt(ctx.cwd);
+
 		if (planReviseMode && pendingPlanContent) {
 			return {
 				message: {
 					customType: "plan-revise-context",
-					content: `${PLAN_REVISE_SYSTEM_PROMPT}\n\n## Current Plan: ${pendingPlanTitle}\n\n${pendingPlanContent}`,
+					content: `${PLAN_REVISE_SYSTEM_PROMPT}${memoryBankPrompt}\n\n## Current Plan: ${pendingPlanTitle}\n\n${pendingPlanContent}`,
 					display: false,
 				},
 			};
@@ -1215,17 +1486,22 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			return {
 				message: {
 					customType: "plan-amend-context",
-					content: `${PLAN_AMEND_SYSTEM_PROMPT}\n\n## Current Plan Status\n\n${pendingPlanContent}`,
+					content: `${PLAN_AMEND_SYSTEM_PROMPT}${memoryBankPrompt}\n\n## Current Plan Status\n\n${pendingPlanContent}`,
 					display: false,
 				},
 			};
 		}
 
 		if (planModeEnabled) {
+			const customTemplate = loadCustomTemplate(ctx.cwd);
+			const templateNote = customTemplate
+				? `\n\n## Custom Plan Template\n\nThis project has a custom plan template at \`.pi/plan-template.md\`. Use that format when writing plans with plan_write.\n\n${customTemplate}`
+				: "";
+
 			return {
 				message: {
 					customType: "plan-mode-context",
-					content: PLAN_MODE_SYSTEM_PROMPT,
+					content: `${PLAN_MODE_SYSTEM_PROMPT}${memoryBankPrompt}${templateNote}`,
 					display: false,
 				},
 			};
