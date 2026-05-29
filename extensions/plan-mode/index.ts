@@ -31,15 +31,32 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
+	compressText,
 	createPlanFile,
+	isCompressibleFile,
 	listPlans,
 	type PlanMetadata,
 	readPlanFile,
 	slugify,
 	updatePlanStatus,
 } from "./plan-files.ts";
-import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
+import {
+	EXECUTION_MODE_PROMPT,
+	PLAN_MODE_SYSTEM_PROMPT,
+	PLAN_MODE_SYSTEM_PROMPT_BRIEF,
+	CONCISENESS_DIRECTIVE,
+} from "./prompts.ts";
+import {
+	TokenMetricsCollector,
+	aggregateLifetimeMetrics,
+	type TokenMetricsSnapshot,
+	formatTokenReport,
+	type TokenMetricsSummary,
+} from "./token-metrics.ts";
 import {
 	MAX_HEADER_LENGTH,
 	MAX_OPTIONS,
@@ -285,6 +302,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
+	let planModeTurnCount = 0;
+	let showTokenOverhead = false;
+	let lastTurnOverhead = 0;
+	const metrics = new TokenMetricsCollector();
 
 	// ── Plan Content Renderer ──────────────────────────────────────────
 
@@ -314,7 +335,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`),
 			);
 		} else if (planModeEnabled) {
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
+			const overhead = showTokenOverhead && lastTurnOverhead > 0
+				? ` · +${lastTurnOverhead}T`
+				: "";
+			ctx.ui.setStatus(
+				"plan-mode",
+				ctx.ui.theme.fg("warning", `⏸ plan${overhead}`),
+			);
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
@@ -351,7 +378,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			enabled: planModeEnabled,
 			todos: todoItems,
 			executing: executionMode,
+			turnCount: planModeTurnCount,
 		});
+		// Persist token metrics
+		const snapshots = metrics.toSnapshot();
+		if (snapshots.length > 0) {
+			pi.appendEntry("plan-mode-tokens", snapshots);
+		}
 	}
 
 	// ── Toggle ──────────────────────────────────────────────────────────
@@ -359,6 +392,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function enterPlanMode(ctx: ExtensionContext): void {
 		planModeEnabled = true;
 		executionMode = false;
+		planModeTurnCount = 0;
 		pi.setActiveTools(PLAN_MODE_TOOLS);
 		ctx.ui.notify(
 			`Plan mode enabled — read-only. Tools: read, grep, find, ls, bash (safe), subagent, research, plan_write`,
@@ -394,6 +428,88 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => togglePlanMode(ctx),
 	});
 
+	pi.registerCommand("tokens-toggle", {
+		description: "Toggle showing per-turn token overhead in the footer status",
+		handler: async (_args, ctx) => {
+			showTokenOverhead = !showTokenOverhead;
+			ctx.ui.notify(
+				`Token overhead ${showTokenOverhead ? "shown" : "hidden"} in footer`,
+				"info",
+			);
+			updateUI(ctx);
+		},
+	});
+
+	pi.registerCommand("compress-context", {
+		description:
+			"Compress a context file (default: context.md) into caveman-speak to save input tokens. " +
+			"Drops filler, articles, pleasantries; preserves code, URLs, file paths. " +
+			"Original backed up as {file}.original.md. Only for .md, .txt, .typ files.",
+		handler: async (args, ctx) => {
+			const filepath = (args?.trim() || "context.md").replace(
+				/^~\//,
+				os.homedir() + "/",
+			);
+			const absolutePath = path.isAbsolute(filepath)
+				? filepath
+				: path.join(ctx.cwd, filepath);
+
+			// Check file exists
+			if (!fs.existsSync(absolutePath)) {
+				ctx.ui.notify(`File not found: ${absolutePath}`, "error");
+				return;
+			}
+
+			// Check file is compressible
+			if (!isCompressibleFile(absolutePath)) {
+				ctx.ui.notify(
+					`Skipped: ${absolutePath} is not a compressible file type (.md, .txt, .typ, .tex)`, "warning",
+				);
+				return;
+			}
+
+			// Skip if already a .original.md backup
+			if (absolutePath.endsWith(".original.md")) {
+				ctx.ui.notify("Skipped: already a backup file (*.original.md)", "warning");
+				return;
+			}
+
+			try {
+				const content = fs.readFileSync(absolutePath, "utf-8");
+				const originalSize = content.length;
+				const originalTokens = Math.ceil(originalSize / 4);
+
+				const compressed = compressText(content);
+				const compressedSize = compressed.length;
+				const compressedTokens = Math.ceil(compressedSize / 4);
+
+				// Save backup
+				const backupPath = absolutePath.replace(/\.(\w+)$/, ".original.$1");
+				fs.writeFileSync(backupPath, content, "utf-8");
+
+				// Overwrite original
+				fs.writeFileSync(absolutePath, compressed, "utf-8");
+
+				const saved = originalSize - compressedSize;
+				const savedTokens = originalTokens - compressedTokens;
+				const pct = originalSize > 0
+					? Math.round((saved / originalSize) * 100)
+					: 0;
+
+				ctx.ui.notify(
+					`Compressed ${path.basename(absolutePath)}: ${originalTokens} → ${compressedTokens} tokens` +
+					` (~${pct}% saved). Backup: ${path.basename(backupPath)}`,
+					"info",
+				);
+			} catch (err) {
+				ctx.ui.notify(
+					`Failed to compress: ${err instanceof Error ? err.message : String(err)}`,
+					"error",
+				);
+			}
+		},
+	});
+
 	pi.registerCommand("plans", {
 		description: "List saved plans",
 		handler: async (_args, ctx) => {
@@ -408,6 +524,44 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				)
 				.join("\n");
 			ctx.ui.notify(`Saved Plans:\n${list}`, "info");
+		},
+	});
+
+		pi.registerCommand("tokens", {
+		description: "Show token usage metrics for plan mode",
+		handler: async (_args, ctx) => {
+			const sessionSummary = metrics.getSummary();
+
+			// Load lifetime metrics from persisted entries
+			const entries = ctx.sessionManager.getEntries();
+			const tokenEntries: TokenMetricsSnapshot[] = [];
+			for (const entry of entries) {
+				if (
+					(entry as { type: string; customType?: string }).type === "custom" &&
+					(entry as { type: string; customType?: string }).customType ===
+						"plan-mode-tokens"
+				) {
+					const data = (entry as { data?: TokenMetricsSnapshot[] }).data;
+					if (data) tokenEntries.push(...data);
+				}
+			}
+			const lifetime = aggregateLifetimeMetrics(tokenEntries);
+
+			const summary: TokenMetricsSummary = {
+				session: {
+					totalTokens: sessionSummary.total,
+					sources: sessionSummary.sources,
+					outputTokens: sessionSummary.output,
+				},
+				lifetime: {
+					totalTokens: lifetime.totalTokens,
+					sessions: lifetime.sessions,
+					perCategory: lifetime.perCategory,
+				},
+			};
+
+			const report = formatTokenReport(summary);
+			ctx.ui.notify(report, "info");
 		},
 	});
 
@@ -461,15 +615,19 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				hasTodos: todoItems.length > 0,
 			});
 
-			// Send user message to execute the plan
+			// Send user message to execute the plan (short reference, don't embed full content)
 			if (planContent) {
 				const planTitle = planContent.match(/^#[\s]+(.+)/m)?.[1] || "Plan";
+				metrics.record("plan-content", planContent.length);
 				pi.sendUserMessage(
-					`Execute the plan: **${planTitle}**\n\n${planContent}\n\nFollow each phase in order. After completing each step, include a [DONE:n] tag matching the phase number. Report progress after each phase.`,
+					`Execute plan "${planTitle}" (${planName}). ` +
+					`Read full content via plan_read(full:true) if needed. ` +
+					`${todoItems.length} phases. Tag [DONE:n], pause at ⏸️ markers.`,
 				);
 			} else {
+				metrics.record("plan-content", 0);
 				pi.sendUserMessage(
-					"Execute the plan. Follow all phases in order and mark steps with [DONE:n] when completed.",
+					"Execute the plan. Mark phases with [DONE:n]. Pause at ⏸️ markers.",
 				);
 			}
 		},
@@ -488,53 +646,50 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		name: "plan_question",
 		label: "Ask Questions",
 		description:
-			"Present interactive clarifying questions to the user. Use during plan mode to ask structured questions with predefined options. Supports single-select, multi-select, and custom text answers. Batch multiple related questions in one call. Returns answers as arrays mapping to each question.",
-		promptSnippet: "Ask structured clarifying questions with options",
+			"Ask structured clarifying questions. Supports single-select, multi-select, and custom text. Batch up to 4 questions per call.",
+		promptSnippet: "Ask structured clarifying questions",
 		promptGuidelines: [
-			"Use plan_question to ask structured clarifying questions with predefined options. Do NOT ask questions inline — use the tool for a better interactive UX.",
-			"Each question must have a short header (max 12 chars) and 2-4 options with clear labels and descriptions.",
-			"Batch multiple related questions in one call (max 4 questions per call).",
+			"Use plan_question instead of asking inline. Batch up to 4 questions, 2-4 options each, headers ≤12 chars.",
 		],
 		parameters: Type.Object({
 			questions: Type.Array(
 				Type.Object({
 					question: Type.String({
-						description: "Full question text to display",
+						description: "Question text",
 					}),
 					header: Type.String({
-						description: "Short label for tab display (max 12 characters)",
+						description: "Tab label, ≤12 chars",
 					}),
 					options: Type.Array(
 						Type.Object({
 							label: Type.String({
-								description: "Option label shown to user",
+								description: "Option label",
 							}),
 							description: Type.String({
-								description: "Brief description of this option",
+								description: "Option description",
 							}),
 						}),
 						{
 							minItems: MIN_OPTIONS,
 							maxItems: MAX_OPTIONS,
-							description: "2-4 predefined options with label and description",
+							description: "2-4 options",
 						},
 					),
 					multiSelect: Type.Optional(
 						Type.Boolean({
-							description:
-								"Allow multiple selections (checkboxes). Default: false",
+							description: "Allow multiple selections (default: false)",
 						}),
 					),
 					custom: Type.Optional(
 						Type.Boolean({
-							description: "Allow free-text 'Other' answer. Default: true",
+							description: "Allow free-text answer (default: true)",
 						}),
 					),
 				}),
 				{
 					minItems: 1,
 					maxItems: MAX_QUESTIONS,
-					description: "1-4 questions to ask",
+					description: "1-4 questions",
 				},
 			),
 		}),
@@ -611,16 +766,18 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					};
 				}
 
+				const answersResponse = result
+					.map((answers, i) => {
+						const header = input.questions[i]?.header ?? `Q${i + 1}`;
+						return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
+					})
+					.join("\n");
+				metrics.record("tool-response", answersResponse.length);
 				return {
 					content: [
 						{
 							type: "text",
-							text: `User answers received:\n${result
-								.map((answers, i) => {
-									const header = input.questions[i]?.header ?? `Q${i + 1}`;
-									return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
-								})
-								.join("\n")}`,
+							text: `User answers received:\n${answersResponse}`,
 						},
 					],
 					details: { answers: result },
@@ -635,11 +792,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				)
 				.join("\n\n");
 
+			const nonInteractiveResponse = `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`;
+			metrics.record("tool-response", nonInteractiveResponse.length);
 			return {
 				content: [
 					{
 						type: "text",
-						text: `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`,
+						text: nonInteractiveResponse,
 					},
 				],
 				details: { nonInteractive: true },
@@ -652,28 +811,24 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "plan_write",
 		label: "Write Plan",
-		description:
-			"Save an implementation plan to .pi/plans/. Use during plan mode to persist structured plans with phases, verification steps, and risks.",
-		promptSnippet: "Save an implementation plan to .pi/plans/{filename}",
+		description: "Save a plan to .pi/plans/. Auto-formats YAML frontmatter.",
+		promptSnippet: "Save a plan to .pi/plans/",
 		promptGuidelines: [
-			"Use plan_write to save structured plans during plan mode. Include phases, verification steps, risks, and pause points.",
+			"Use plan_write to persist plans with phases, verification, and ⏸️ pause markers.",
 		],
 		parameters: Type.Object({
 			filename: Type.String({
-				description:
-					"Plan filename (e.g. 'add-rate-limiting' or 'feature-auth'). Auto-prefixed with date and .md extension.",
+				description: "Plan filename (e.g. 'add-rate-limiting'). Auto-prefixed with date.",
 			}),
 			title: Type.String({
-				description: "Human-readable plan title",
+				description: "Plan title",
 			}),
 			content: Type.String({
-				description:
-					"Full plan content in markdown. Include phases, verification, risks, and pause points.",
+				description: "Plan content in markdown, with phases and verification steps.",
 			}),
 			type: Type.Optional(
 				Type.String({
-					description:
-						"Plan type: feature, fix, refactor, or chore (default: feature)",
+					description: "Plan type: feature, fix, refactor, chore (default: feature)",
 				}),
 			),
 		}),
@@ -706,14 +861,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 								: "📋";
 				const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
 
-				// Display the plan as a rendered markdown message in the conversation
-				pi.sendMessage(
-					{
-						customType: "plan-content",
-						content: `${titleHeading}${metaLine}\n${cleanBody}`,
-						display: true,
-					},
-					{ triggerTurn: false },
+				// Notify that plan was saved (don't re-send full content — LLM already wrote it)
+				const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
+				metrics.record("plan-content", planMessageContent.length);
+				ctx.ui.notify(
+					`Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
+					"info",
 				);
 
 				return {
@@ -743,14 +896,17 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "plan_read",
 		label: "Read Plan",
-		description:
-			"Read a saved plan from .pi/plans/. Use to review plans created earlier in this or previous sessions.",
-		promptSnippet: "Read a plan from .pi/plans/{filename}",
+		description: "Read a plan from .pi/plans/. Returns full content by default, metadata-only if full:false.",
+		promptSnippet: "Read a plan from .pi/plans/",
 		parameters: Type.Object({
 			filename: Type.String({
-				description:
-					"Plan filename or partial name (e.g. 'add-rate-limiting', 'feature-auth')",
+				description: "Plan filename or partial name",
 			}),
+			full: Type.Optional(
+				Type.Boolean({
+					description: "Return full content (default: true). false = metadata only",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
@@ -766,11 +922,16 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 						details: {},
 					};
 				}
+				const full = params.full !== false;
+				const planReadResponse = full
+					? `# ${plan.metadata.title}\nStatus: ${plan.metadata.status} | Created: ${plan.metadata.created} | Type: ${plan.metadata.type}\n\n${plan.content}`
+					: `# ${plan.metadata.title} [${plan.metadata.status}]\n${plan.metadata.type} · ${plan.metadata.created.slice(0, 10)}\n${plan.filename}`;
+				metrics.record("tool-response", planReadResponse.length);
 				return {
 					content: [
 						{
 							type: "text",
-							text: `# ${plan.metadata.title}\nStatus: ${plan.metadata.status} | Created: ${plan.metadata.created} | Type: ${plan.metadata.type}\n\n${plan.content}`,
+							text: planReadResponse,
 						},
 					],
 					details: { filename: plan.filename, metadata: plan.metadata },
@@ -793,14 +954,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "plan_list",
 		label: "List Plans",
-		description:
-			"List all saved plans in .pi/plans/. Shows filename, status, title, and creation date.",
-		promptSnippet: "List all saved plans",
+		description: "List saved plans in .pi/plans/. Shows filename, status, title, date. Optionally filter by status.",
+		promptSnippet: "List saved plans",
 		parameters: Type.Object({
 			status: Type.Optional(
 				Type.String({
-					description:
-						"Filter by status: draft, approved, in_progress, or done",
+					description: "Filter: draft, approved, in_progress, done",
 				}),
 			),
 		}),
@@ -822,8 +981,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 							`- **${p.filename}** [${p.metadata.status}] ${p.metadata.title} (${p.metadata.created.slice(0, 10)})`,
 					)
 					.join("\n");
+				const planListResponse = `# Saved Plans\n\n${list}`;
+				metrics.record("tool-response", planListResponse.length);
 				return {
-					content: [{ type: "text", text: `# Saved Plans\n\n${list}` }],
+					content: [{ type: "text", text: planListResponse }],
 					details: { plans: plans.map((p) => p.filename) },
 				};
 			} catch (err: unknown) {
@@ -862,10 +1023,17 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async () => {
 		if (planModeEnabled) {
+			planModeTurnCount++;
+			// Use brief prompt on 2nd+ turn (progressive disclosure)
+			const prompt = planModeTurnCount <= 1
+				? PLAN_MODE_SYSTEM_PROMPT
+				: PLAN_MODE_SYSTEM_PROMPT_BRIEF;
+			metrics.record("system-prompt", prompt.length);
+			lastTurnOverhead = Math.ceil(prompt.length / 4);
 			return {
 				message: {
 					customType: "plan-mode-context",
-					content: PLAN_MODE_SYSTEM_PROMPT,
+					content: prompt,
 					display: false,
 				},
 			};
@@ -874,10 +1042,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		if (executionMode && todoItems.length > 0) {
 			const remaining = todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
+			const execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
+			metrics.record("execution-context", execContent.length);
 			return {
 				message: {
 					customType: "plan-execution-context",
-					content: `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`,
+					content: execContent,
 					display: false,
 				},
 			};
@@ -887,6 +1057,14 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── Event: Track [DONE:n] Markers ───────────────────────────────────
 
 	pi.on("turn_end", async (event, ctx) => {
+		// Record output tokens from agent responses
+		if (isAssistantMessage(event.message)) {
+			const text = getTextContent(event.message);
+			if (text.length > 0) {
+				metrics.recordOutput(text.length);
+			}
+		}
+
 		if (!executionMode || todoItems.length === 0) return;
 		if (!isAssistantMessage(event.message)) return;
 
@@ -905,10 +1083,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			const allDone = todoItems.every((t) => t.completed);
 			if (allDone) {
 				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
+				const completeContent = `**Plan Complete!** ✓\n\n${completedList}`;
+				metrics.record("plan-complete", completeContent.length);
 				pi.sendMessage(
 					{
 						customType: "plan-complete",
-						content: `**Plan Complete!** ✓\n\n${completedList}`,
+						content: completeContent,
 						display: true,
 					},
 					{ triggerTurn: false },
@@ -928,11 +1108,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			if (lastAssistant) {
 				const text = getTextContent(lastAssistant);
 				if (text.includes("⏸") || text.includes("PAUSE")) {
+					const pauseContent =
+						"⏸️ **Pause point reached.** Review the completed phase before continuing.";
+					metrics.record("plan-pause", pauseContent.length);
 					pi.sendMessage(
 						{
 							customType: "plan-pause",
-							content:
-								"⏸️ **Pause point reached.** Review the completed phase before continuing.",
+							content: pauseContent,
 							display: true,
 						},
 						{ triggerTurn: false },
@@ -958,15 +1140,17 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 		}
 
-		// Show plan steps if extracted
-		if (todoItems.length > 0) {
+		// Show plan steps if extracted (skip when TUI widget visible — duplicates progress)
+		if (todoItems.length > 0 && !ctx.hasUI) {
 			const todoListText = todoItems
 				.map((t, i) => `${i + 1}. ○ ${t.text}`)
 				.join("\n");
+			const todoListContent = `**Plan Steps (${todoItems.length}):**\n\n${todoListText}`;
+			metrics.record("plan-todo-list", todoListContent.length);
 			pi.sendMessage(
 				{
 					customType: "plan-todo-list",
-					content: `**Plan Steps (${todoItems.length}):**\n\n${todoListText}`,
+					content: todoListContent,
 					display: true,
 				},
 				{ triggerTurn: false },
@@ -990,14 +1174,36 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					e.type === "custom" && e.customType === "plan-mode-v2",
 			)
 			.pop() as
-			| { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } }
+			| {
+					data?: {
+						enabled: boolean;
+						todos?: TodoItem[];
+						executing?: boolean;
+						turnCount?: number;
+					};
+			  }
 			| undefined;
 
 		if (planModeEntry?.data) {
 			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
 			todoItems = planModeEntry.data.todos ?? todoItems;
 			executionMode = planModeEntry.data.executing ?? executionMode;
+			planModeTurnCount = planModeEntry.data.turnCount ?? 0;
 		}
+
+		// Restore token metrics from persisted entries
+		const tokenEntries: TokenMetricsSnapshot[] = [];
+		for (const entry of entries) {
+			if (
+				(entry as { type: string; customType?: string }).type === "custom" &&
+				(entry as { type: string; customType?: string }).customType ===
+					"plan-mode-tokens"
+			) {
+				const data = (entry as { data?: TokenMetricsSnapshot[] }).data;
+				if (data) tokenEntries.push(...data);
+			}
+		}
+		metrics.fromSnapshots(tokenEntries);
 
 		// On resume, re-scan messages for [DONE:n] markers
 		const isResume = planModeEntry !== undefined;

@@ -197,3 +197,151 @@ export function slugify(text: string): string {
 		.slice(0, 80);
 	return `${date}-${slug}`;
 }
+
+/**
+ * Compress natural language text using caveman-compress style rules.
+ * Drops filler words, articles, pleasantries, and hedging.
+ * Preserves code blocks, inline code, URLs, file paths, and technical terms.
+ * Pure text transformation — no LLM call needed.
+ *
+ * Based on caveman-compress rules (github.com/JuliusBrussee/caveman):
+ * - Remove: articles (a/an/the), filler (just/really/basically),
+ *   pleasantries (sure/certainly), hedging ("it might be worth")
+ * - Preserve EXACTLY: code blocks (fenced), inline code (`backtick`),
+ *   URLs, file paths, commands, technical terms
+ * - Preserve structure: markdown headings, bullet hierarchy, tables
+ */
+export function compressText(content: string): string {
+	// Split into blocks: code fenced blocks vs regular text
+	const parts = content.split(/(```[\s\S]*?```)/);
+	return parts
+		.map((part, i) => {
+			// Even indexes = text outside code blocks, odd = code blocks
+			if (i % 2 === 1) return part; // Preserve code blocks exactly
+			return compressProse(part);
+		})
+		.join("");
+}
+
+/**
+ * Compress a prose segment (no code blocks).
+ */
+function compressProse(text: string): string {
+	// Preserve inline code (`...`) and URLs — mark them as protected regions
+	const protectedMarkers: string[] = [];
+	const protectedPattern = /(`[^`]+`)|(https?:\/\/[^\s]+)|(\/[\w./-]+\.[a-z]+)/gi;
+
+	const marked = text.replace(protectedPattern, (match) => {
+		const idx = protectedMarkers.length;
+		protectedMarkers.push(match);
+		return `\x00PROTECT${idx}\x00`;
+	});
+
+	// Lines that are pure whitespace or markdown headings preserved as-is
+	const lines = marked.split("\n");
+	const compressed = lines.map((line) => {
+		const trimmed = line.trim();
+
+		// Preserve markdown headings, list markers, and horizontal rules
+		if (trimmed.startsWith("#") || trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("> ") || trimmed.startsWith("|") || trimmed.startsWith("---") || trimmed.startsWith("___") || trimmed.startsWith("***")) {
+			return line;
+		}
+
+		// Preserve frontmatter lines
+		if (trimmed.startsWith("---")) {
+			return line;
+		}
+
+		// Preserve empty lines
+		if (!trimmed) {
+			return line;
+		}
+
+		return compressLine(line);
+	});
+
+	const result = compressed.join("\n");
+
+	// Restore protected markers
+	return result.replace(
+		/\x00PROTECT(\d+)\x00/g,
+		(_match, idx) => protectedMarkers[parseInt(idx, 10)] ?? _match,
+	);
+}
+
+/**
+ * Compress a single line of prose.
+ */
+function compressLine(line: string): string {
+	let text = line;
+
+	// Filler words to drop (when used as standalone filler, not part of technical terms)
+	const fillerPatterns = [
+		/\bjust\b/gi,
+		/\breally\b/gi,
+		/\bbasically\b/gi,
+		/\bactually\b/gi,
+		/\bsimply\b/gi,
+		/\bessentially\b/gi,
+		/\bgenerally\b/gi,
+		/\bliterally\b/gi,
+		/\bquite\b/gi,
+		/\brather\b/gi,
+		/\bsomewhat\b/gi,
+	];
+
+	// Pleasantries / hedging phrases
+	const phrasePatterns = [
+		/\bin order to\b/gi,
+		/\bmake sure to\b/gi,
+		/\bremember to\b/gi,
+		/\byou should\b/gi,
+		/\byou could consider\b/gi,
+		/\bits( is)? worth\b/gi,
+	];
+
+	// Articles (optional — more aggressive compression)
+	const articlePatterns = [
+		/\bthe\b\s+/gi,
+		/\ba\b\s+/gi,
+		/\ban\b\s+/gi,
+	];
+
+	for (const pattern of fillerPatterns) {
+		text = text.replace(pattern, "");
+	}
+
+	for (const pattern of phrasePatterns) {
+		text = text.replace(pattern, "to"); // "in order to" → "to", etc.
+	}
+
+	// Remove articles (second pass, after filler removal)
+	for (const pattern of articlePatterns) {
+		text = text.replace(pattern, " ");
+	}
+
+	// Collapse multiple spaces
+	text = text.replace(/\s{2,}/g, " ");
+
+	// Trim leading/trailing whitespace
+	text = text.trim();
+
+	return text;
+}
+
+/**
+ * Get the file extension for type checking.
+ */
+function getExtension(filepath: string): string {
+	const ext = filepath.split(".").pop()?.toLowerCase() ?? "";
+	return ext;
+}
+
+/**
+ * Check if a file should be compressed (natural language files only).
+ */
+export function isCompressibleFile(filepath: string): boolean {
+	const compressibleExts = ["md", "txt", "typ", "typst", "tex"];
+	const ext = getExtension(filepath);
+	return compressibleExts.includes(ext);
+}
