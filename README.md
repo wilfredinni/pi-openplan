@@ -11,6 +11,7 @@
 | 🔒 **Read-only mode** | Restricts tools to read-only (read, grep, find, ls, safe bash). Blocks destructive commands. |
 | 📝 **Structured plans** | Save plans to `.pi/plans/` with YAML frontmatter (title, status, type, dates). |
 | 📋 **Plan file management** | LLM-callable tools: `plan_write`, `plan_read`, `plan_list` with status filtering. |
+| ❓ **Interactive Q&A** | `plan_question` tool presents structured clarifying questions in a TUI overlay with options, multi-select, and free-text answers. |
 | 🎯 **Progress tracking** | Mark plan steps complete with `[DONE:n]` tags — widget shows live progress. |
 | ⏸️ **Pause points** | Detection of `⏸️ PAUSE` markers in plans for verification gates. |
 | 🔄 **State persistence** | Plan mode state, todos, and execution mode survive session restarts and `/reload`. |
@@ -115,6 +116,29 @@ List all saved plans, optionally filtered by status (draft, approved, in_progres
 }
 ```
 
+### `plan_question`
+
+Present interactive clarifying questions to the user with predefined options. Supports single-select, multi-select, and custom free-text answers. Batch multiple related questions in one call. Returns the user's selected answers.
+
+```json
+{
+  "questions": [
+    {
+      "question": "Which database should we use?",
+      "header": "Database",
+      "options": [
+        { "label": "PostgreSQL", "description": "Relational, ACID compliant" },
+        { "label": "SQLite", "description": "Embedded, zero config" }
+      ],
+      "multiSelect": false,
+      "custom": true
+    }
+  ]
+}
+```
+
+When called in interactive mode, the user sees a keyboard-navigable TUI overlay with numbered options, tab-based navigation for multiple questions, and an inline text editor for custom answers. In print mode, questions are returned as text for the LLM to make reasonable assumptions.
+
 ## Plan File Format
 
 Plans are stored as markdown files in `.pi/plans/` with YAML frontmatter:
@@ -155,11 +179,12 @@ Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The
 1. **Toggle on**: `/plan` or `Ctrl+Alt+P`
 2. **Explore**: Read files, search code, research approaches (all read-only)
 3. **Plan**: The LLM creates a structured plan using `plan_write` with phases, verification steps, and risks
-4. **Review**: The LLM presents the plan and asks what to do next
-5. **Execute**: Select "Execute the plan" — plan mode exits, execution begins
-6. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
-7. **Verify**: At each ⏸️ pause point, review before continuing
-8. **Complete**: When all steps are done, the extension announces completion
+4. **Review**: The LLM presents the plan summary and stops — no prompts or choices
+5. **Toggle off**: Use `/plan` to disable plan mode when ready to execute
+6. **Execute**: Ask the agent to implement the plan
+7. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
+8. **Verify**: At each ⏸️ pause point, review before continuing
+9. **Complete**: When all steps are done, the extension announces completion
 
 ## Development
 

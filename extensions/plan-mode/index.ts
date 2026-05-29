@@ -7,6 +7,7 @@
  * Commands:
  *   /plan           — Toggle plan mode
  *   /plans          — List saved plans
+ *   /execute_plan   — Exit plan mode and execute a saved plan
  *   Ctrl+Alt+P      — Toggle plan mode
  *
  * Flags:
@@ -24,7 +25,8 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
+import { getMarkdownTheme, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	createPlanFile,
@@ -32,8 +34,17 @@ import {
 	type PlanMetadata,
 	readPlanFile,
 	slugify,
+	updatePlanStatus,
 } from "./plan-files.ts";
 import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
+import {
+	type PlanQuestionInput,
+	PlanQuestionPrompt,
+	MAX_QUESTIONS,
+	MAX_HEADER_LENGTH,
+	MIN_OPTIONS,
+	MAX_OPTIONS,
+} from "./questions.ts";
 
 // ── Tool Sets ──────────────────────────────────────────────────────────
 
@@ -58,6 +69,7 @@ const PLAN_MODE_TOOLS = [
 	"plan_write",
 	"plan_read",
 	"plan_list",
+	"plan_question",
 ];
 
 /** Tools restored when exiting plan mode */
@@ -271,6 +283,16 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
 
+	// ── Plan Content Renderer ──────────────────────────────────────────
+
+	pi.registerMessageRenderer("plan-content", (message, _options, theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
 	// ── CLI Flag ────────────────────────────────────────────────────────
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -386,11 +408,248 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("execute_plan", {
+		description:
+			"Exit plan mode and execute a saved plan. Optionally provide a plan name as argument.",
+		handler: async (args, ctx) => {
+			// Exit plan mode if active
+			if (planModeEnabled) {
+				planModeEnabled = false;
+				executionMode = true;
+				pi.setActiveTools(NORMAL_MODE_TOOLS);
+			} else {
+				executionMode = true;
+			}
+
+			todoItems = [];
+			let planContent = "";
+			const planName = args?.trim();
+
+			if (planName) {
+				try {
+					const plan = readPlanFile(ctx.cwd, planName);
+					if (plan) {
+						planContent = plan.content;
+						updatePlanStatus(ctx.cwd, planName, "in_progress");
+						const extracted = extractTodosFromPlan(plan.content);
+						if (extracted.length > 0) {
+							todoItems = extracted;
+						}
+					} else {
+						ctx.ui.notify(
+							`No plan found matching "${planName}". Entering execution mode without a plan.`,
+							"warning",
+						);
+					}
+				} catch (err) {
+					ctx.ui.notify(
+						`Failed to read plan: ${err instanceof Error ? err.message : String(err)}`,
+						"error",
+					);
+				}
+			}
+
+			updateUI(ctx);
+			persistState();
+
+			// Record execution start for resume tracking
+			pi.appendEntry("plan-mode-execute", {
+				planName: planName || null,
+				hasTodos: todoItems.length > 0,
+			});
+
+			// Send user message to execute the plan
+			if (planContent) {
+				const planTitle = planContent.match(/^#[\s]+(.+)/m)?.[1] || "Plan";
+				pi.sendUserMessage(
+					`Execute the plan: **${planTitle}**\n\n${planContent}\n\nFollow each phase in order. After completing each step, include a [DONE:n] tag matching the phase number. Report progress after each phase.`,
+				);
+			} else {
+				pi.sendUserMessage(
+					"Execute the plan. Follow all phases in order and mark steps with [DONE:n] when completed.",
+				);
+			}
+		},
+	});
+
 	// ── Shortcut ────────────────────────────────────────────────────────
 
 	pi.registerShortcut(Key.ctrlAlt("p"), {
 		description: "Toggle plan mode",
 		handler: async (ctx) => togglePlanMode(ctx),
+	});
+
+	// ── Plan Question Tool ────────────────────────────────────────────
+
+	pi.registerTool({
+		name: "plan_question",
+		label: "Ask Questions",
+		description:
+			"Present interactive clarifying questions to the user. Use during plan mode to ask structured questions with predefined options. Supports single-select, multi-select, and custom text answers. Batch multiple related questions in one call. Returns answers as arrays mapping to each question.",
+		promptSnippet: "Ask structured clarifying questions with options",
+		promptGuidelines: [
+			"Use plan_question to ask structured clarifying questions with predefined options. Do NOT ask questions inline — use the tool for a better interactive UX.",
+			"Each question must have a short header (max 12 chars) and 2-4 options with clear labels and descriptions.",
+			"Batch multiple related questions in one call (max 4 questions per call).",
+		],
+		parameters: Type.Object({
+			questions: Type.Array(
+				Type.Object({
+					question: Type.String({
+						description: "Full question text to display",
+					}),
+					header: Type.String({
+						description:
+							"Short label for tab display (max 12 characters)",
+					}),
+					options: Type.Array(
+						Type.Object({
+							label: Type.String({
+								description: "Option label shown to user",
+							}),
+							description: Type.String({
+								description: "Brief description of this option",
+							}),
+						}),
+						{
+							minItems: MIN_OPTIONS,
+							maxItems: MAX_OPTIONS,
+							description:
+								"2-4 predefined options with label and description",
+						},
+					),
+					multiSelect: Type.Optional(
+						Type.Boolean({
+							description:
+								"Allow multiple selections (checkboxes). Default: false",
+						}),
+					),
+					custom: Type.Optional(
+						Type.Boolean({
+							description:
+								"Allow free-text 'Other' answer. Default: true",
+						}),
+					),
+				}),
+				{
+					minItems: 1,
+					maxItems: MAX_QUESTIONS,
+					description: "1-4 questions to ask",
+				},
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const input = params as unknown as PlanQuestionInput;
+
+			// Validate input
+			for (const q of input.questions) {
+				if (!q.question?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: question text is empty. Each question must have non-empty text.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (!q.header?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header is empty for question "${q.question.slice(0, 40)}...". Each question needs a short header label.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (q.header.length > MAX_HEADER_LENGTH) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+			}
+
+			// Interactive mode: present as TUI overlay
+			if (ctx.hasUI && ctx.ui.custom) {
+				const result = await ctx.ui.custom<string[][] | null>(
+					(tui, theme, _kb, done) => {
+						const prompt = new PlanQuestionPrompt(
+							input.questions,
+							tui,
+							theme,
+							done,
+						);
+						return {
+							render: (w: number) => prompt.render(w),
+							invalidate() {
+								prompt.invalidate();
+							},
+							handleInput(data: string) {
+								prompt.handleInput(data);
+								tui.requestRender();
+							},
+						};
+					},
+				);
+
+				if (result === null) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "Questions were dismissed by the user. Proceed with your best judgment based on what you know, or make reasonable assumptions.",
+							},
+						],
+						details: { dismissed: true },
+					};
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `User answers received:\n${result
+								.map((answers, i) => {
+									const header = input.questions[i]?.header ?? `Q${i + 1}`;
+									return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
+								})
+								.join("\n")}`,
+						},
+					],
+					details: { answers: result },
+				};
+			}
+
+			// Non-interactive mode (print / JSON): return questions as text
+			const questionText = input.questions
+				.map(
+					(q, i) =>
+						`Question ${i + 1}: ${q.question}\nOptions:\n${q.options.map((o, j) => `  ${j + 1}. ${o.label} — ${o.description}`).join("\n")}${q.custom !== false ? `\n  or type your own answer` : ""}`,
+				)
+				.join("\n\n");
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`,
+					},
+				],
+				details: { nonInteractive: true },
+			};
+		},
 	});
 
 	// ── Plan Management Tools ───────────────────────────────────────────
@@ -438,11 +697,35 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					params.content,
 					metadata,
 				);
+				// Stripe any YAML frontmatter the agent may have included in the content
+				const { body: cleanBody } = parseFrontmatter(params.content);
+				const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
+				const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
+				const statusIcon =
+					metadata.status === "draft"
+						? "📝"
+						: metadata.status === "in_progress"
+							? "🔄"
+							: metadata.status === "done"
+								? "✅"
+								: "📋";
+				const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
+
+				// Display the plan as a rendered markdown message in the conversation
+				pi.sendMessage(
+					{
+						customType: "plan-content",
+						content: `${titleHeading}${metaLine}\n${cleanBody}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Plan saved: ${result.path}\n\nUse plan_read("${filename.replace(/^\d{4}-\d{2}-\d{2}-/, "")}") to review it later.`,
+							text: `Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
 						},
 					],
 					details: { path: result.path, filename },
@@ -693,62 +976,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				},
 				{ triggerTurn: false },
 			);
-		}
-
-		// Prompt for next action
-		const options = [
-			todoItems.length > 0
-				? "Execute the plan (phase by phase)"
-				: "Execute the plan",
-			"Stay in plan mode (refine)",
-			"Ask a clarifying question",
-			"Exit plan mode",
-		];
-
-		const choice = await ctx.ui.select("Plan mode — what next?", options);
-
-		if (choice?.startsWith("Execute")) {
-			planModeEnabled = false;
-			executionMode = todoItems.length > 0;
-			pi.setActiveTools(NORMAL_MODE_TOOLS);
-			updateUI(ctx);
-			persistState();
-
-			const execMessage =
-				todoItems.length > 0
-					? `Execute the plan phase by phase. Start with Phase 1: ${todoItems[0].text}\n\nAfter completing each phase, include a [DONE:n] tag and pause at ⏸️ markers to verify before continuing.`
-					: "Execute the plan you just created. Follow the phases in order, marking each complete with [DONE:n] tags.";
-
-			pi.sendMessage(
-				{
-					customType: "plan-mode-execute",
-					content: execMessage,
-					display: true,
-				},
-				{ triggerTurn: true },
-			);
-		} else if (choice === "Stay in plan mode (refine)") {
-			const refinement = await ctx.ui.editor(
-				"What would you like to refine or explore further?",
-				"",
-			);
-			if (refinement?.trim()) {
-				pi.sendUserMessage(refinement.trim(), { deliverAs: "steer" });
-			}
-		} else if (choice === "Ask a clarifying question") {
-			const question = await ctx.ui.editor(
-				"What question do you have for me?",
-				"",
-			);
-			if (question?.trim()) {
-				// Send the question as a user response, keeping plan mode active
-				pi.sendUserMessage(
-					`[User response to plan mode question]: ${question.trim()}`,
-					{ deliverAs: "steer" },
-				);
-			}
-		} else if (choice === "Exit plan mode") {
-			exitPlanMode(ctx);
 		}
 	});
 

@@ -49,7 +49,15 @@ any loose ends before implementation begins.
 
 ### Step 4: Clarify
 - Present your understanding to the user
-- ASK clarifying questions — do not guess about:
+- Use the **\`plan_question\`** tool to ask structured clarifying questions with predefined options.
+  Do NOT ask questions inline — use the tool for a better interactive UX.
+- Each question must have a short header (≤12 chars) and 2-4 options with clear labels
+  and descriptions. Users can also type their own answer.
+- When there are multiple independent questions, batch them in one call (max 4).
+- For single-choice questions, set \`multiSelect: false\` (default). For things like
+  "select features you want", set \`multiSelect: true\`.
+- Always allow custom answers by leaving \`custom: true\` (default).
+- Do not guess about:
   * Scope boundaries (what's in / out)
   * Priority and tradeoffs
   * Constraints not visible in the code
@@ -65,13 +73,20 @@ any loose ends before implementation begins.
 ### Step 6: Present Summary
 - Give the user a concise summary of the plan
 - Highlight key decisions, phases, risks
-- Ask if they want to execute, refine, or stay in plan mode
+- The full plan is visible above in the plan_write tool output — do NOT
+  repeat the entire plan verbatim; use it as reference for your summary
+- Do NOT offer to execute the plan — the user will use \`/execute_plan\` to execute it
+- Do NOT ask the user what to do next; just present the summary and stop
 
 ---
 
 ## Plan File Format
 
 Save plans to \`.pi/plans/YYYY-MM-DD-{slug}.md\` using the plan_write tool.
+
+The plan_write tool output renders with terminal styling automatically:
+headings, phases, checkboxes, code blocks, and tables are all formatted.
+Keep the structure clean and use the template below.
 
 \`\`\`markdown
 ---
@@ -81,46 +96,41 @@ created: "ISO timestamp"
 type: feature | fix | refactor | chore
 ---
 
-# [Feature Name] Implementation Plan
+# Feature Name
 
 ## Overview
-
 [What we're building and why — 2-3 sentences]
 
 ## Current State
-
 [How things work today, with code references like \`file.ts:45\`]
 
 ## Desired End State
-
 [What success looks like — specific and measurable]
 
 ## Out of Scope
-
 [Explicit boundaries — what we're NOT doing]
 
 ## Approach
-
 [High-level strategy — why this over alternatives]
 
 ---
 
-## Phase 1: [Descriptive Name]
+## Phase 1: Descriptive Name
 
 ### Changes
-- **\`path/to/file.ts\`**: [what changes and why]
-- **\`path/to/other.ts\`**: [what changes and why]
+- **\`path/to/file.ts\`** — what changes and why
+- **\`path/to/other.ts\`** — what changes and why
 
 ### Verification
 - [ ] Build: \`command\`
 - [ ] Tests: \`command\`
-- [ ] Manual: [specific behavior to verify]
+- [ ] Manual: specific behavior to verify
 
 ⏸️ **PAUSE** — Verify before Phase 2
 
 ---
 
-## Phase 2: [Descriptive Name]
+## Phase 2: Descriptive Name
 ...
 
 ---
@@ -169,6 +179,9 @@ Always run subagents async so you can continue other work in parallel.
 - You CANNOT use: write, edit (except via plan_write for plan files)
 - Bash is restricted to read-only commands (no rm, mv, npm install, git push, etc.)
 - Do NOT make any changes to project source files
+- If the user asks you to implement, build, or execute the plan:
+  say "You're in plan mode. Use \`/execute_plan\` to execute it, or \`/plan\` to exit plan mode."
+- Do NOT offer to execute the plan or ask what the user wants to do next
 `;
 
 export const EXECUTION_MODE_PROMPT = `[EXECUTING PLAN — Full tool access enabled]
