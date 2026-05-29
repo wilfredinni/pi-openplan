@@ -25,7 +25,10 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import {
+	getMarkdownTheme,
+	parseFrontmatter,
+} from "@earendil-works/pi-coding-agent";
 import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
@@ -38,12 +41,12 @@ import {
 } from "./plan-files.ts";
 import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
 import {
+	MAX_HEADER_LENGTH,
+	MAX_OPTIONS,
+	MAX_QUESTIONS,
+	MIN_OPTIONS,
 	type PlanQuestionInput,
 	PlanQuestionPrompt,
-	MAX_QUESTIONS,
-	MAX_HEADER_LENGTH,
-	MIN_OPTIONS,
-	MAX_OPTIONS,
 } from "./questions.ts";
 
 // ── Tool Sets ──────────────────────────────────────────────────────────
@@ -285,7 +288,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	// ── Plan Content Renderer ──────────────────────────────────────────
 
-	pi.registerMessageRenderer("plan-content", (message, _options, theme) => {
+	pi.registerMessageRenderer("plan-content", (message, _options, _theme) => {
 		const rawContent =
 			typeof message.content === "string" ? message.content : "";
 		const mdTheme = getMarkdownTheme();
@@ -499,8 +502,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 						description: "Full question text to display",
 					}),
 					header: Type.String({
-						description:
-							"Short label for tab display (max 12 characters)",
+						description: "Short label for tab display (max 12 characters)",
 					}),
 					options: Type.Array(
 						Type.Object({
@@ -514,8 +516,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 						{
 							minItems: MIN_OPTIONS,
 							maxItems: MAX_OPTIONS,
-							description:
-								"2-4 predefined options with label and description",
+							description: "2-4 predefined options with label and description",
 						},
 					),
 					multiSelect: Type.Optional(
@@ -526,8 +527,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					),
 					custom: Type.Optional(
 						Type.Boolean({
-							description:
-								"Allow free-text 'Other' answer. Default: true",
+							description: "Allow free-text 'Other' answer. Default: true",
 						}),
 					),
 				}),
@@ -585,12 +585,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			if (ctx.hasUI && ctx.ui.custom) {
 				const result = await ctx.ui.custom<string[][] | null>(
 					(tui, theme, _kb, done) => {
-						const prompt = new PlanQuestionPrompt(
-							input.questions,
-							tui,
-							theme,
-							done,
-						);
+						const prompt = new PlanQuestionPrompt(input.questions, theme, done);
 						return {
 							render: (w: number) => prompt.render(w),
 							invalidate() {
