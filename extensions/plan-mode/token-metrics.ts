@@ -88,7 +88,7 @@ export class TokenMetricsCollector {
 
 	/** Record a token source (input-side: prompts, tools, messages) */
 	record(category: string, chars: number): void {
-		const tokens = estimateTokenCount(String(chars));
+		const tokens = estimateTokensFromBytes(chars);
 		const key = category;
 		this.sources.set(key, (this.sources.get(key) ?? 0) + tokens);
 		this.pushSnapshot(category, tokens, chars);
@@ -96,7 +96,7 @@ export class TokenMetricsCollector {
 
 	/** Record output tokens from an agent response */
 	recordOutput(chars: number): void {
-		const tokens = estimateTokenCount(String(chars));
+		const tokens = estimateTokensFromBytes(chars);
 		this.outputTokens += tokens;
 		this.pushSnapshot(CATEGORIES.AGENT_OUTPUT, tokens, chars);
 	}

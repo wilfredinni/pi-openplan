@@ -1,287 +1,243 @@
-# Code Context — pi-openplan
+# Layout Bug Review — question-prompt.ts
 
-## Overview
+## File Under Review
 
-**pi-openplan** is a pi extension (v1.0.0) that adds a read-only plan mode to pi, inspired by OpenCode's plan mode workflow. It's a TypeScript ESM package with **4 source files** in `extensions/plan-mode/`. The extension toggles tool access between read-only (plan/research) and full access (execution), persists structured plan files to `.pi/plans/`, provides an interactive TUI question system, and tracks phased execution with `[DONE:n]` markers.
+`/Users/carlosmontecinos/Projects/pi-openplan/extensions/plan-mode/question-prompt.ts` (529 lines)
 
----
-
-## 1. Project Structure
-
-```
-pi-openplan/
-├── .git/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml              — Type check + lint on push/PR
-│       └── release.yml         — release-please + npm publish
-├── .gitignore                  — node_modules, .pi/plans/, dist/, .DS_Store, *.log
-├── .pi/
-│   └── plans/                  — Saved plan markdown files (gitignored)
-│       ├── 2026-05-28-add-name-to-readme.md
-│       └── 2026-05-28-interactive-plan-questions.md
-├── extensions/
-│   └── plan-mode/
-│       ├── index.ts            — Main extension entry point (all commands, tools, events, state)
-│       ├── plan-files.ts       — Plan file CRUD (create, read, list, updateStatus, slugify)
-│       ├── prompts.ts          — System prompts + plan template
-│       └── questions.ts        — PlanQuestionPrompt TUI component + types
-├── node_modules/
-├── CHANGELOG.md
-├── LICENSE                     — MIT
-├── README.md
-├── package.json
-├── package-lock.json
-└── tsconfig.json
-```
-
-**Key directories:**
-- `extensions/plan-mode/` — the only extension bundle (4 `.ts` files)
-- `.pi/plans/` — where saved plan files live (gitignored)
-- `.github/workflows/` — CI (type-check, lint) + Release (release-please, npm publish)
+The `PlanQuestionPrompt` class renders a bordered TUI overlay with tabs, options, custom text input, and a review pane. All bordered lines are produced by the `contentLine()` method, which truncates and pads.
 
 ---
 
-## 2. Question Tool (`plan_question`)
+## 1. Custom Text Input Line (`truncateToWidth` usage, ~line 509–517)
 
-**Yes, there is a question tool.** It's defined in `extensions/plan-mode/questions.ts` and registered in `extensions/plan-mode/index.ts`.
+**Location**: `renderQuestionTab()`, lines ~509–517. The active-editing branch:
 
-### Location
-- **Types + TUI Component**: `extensions/plan-mode/questions.ts` (529 lines)
-- **Tool Registration + Execution**: `extensions/plan-mode/index.ts` lines ~498-620
+```typescript
+if (this.editing && isSel) {
+    const inputDisplay =
+        this.inputBuffer || t.fg("dim", "Type your answer...");
+    const inputPrefix = " ".repeat(NESTED_MARGIN);       // 4 spaces
+    const inputContent = `${inputPrefix}${t.fg("accent", `> ${inputDisplay}${t.fg("accent", "▌")}`)}`;
+    lines.push(this.contentLine(inputContent, width));
+}
+```
 
-### How it works
+**Finding: The right border `│` does always align.** The chain is:
 
-The LLM calls `plan_question` with structured questions:
+1. `contentLine` computes `contentWidth = width - 4`
+2. Calls `truncateToWidth(inputContent, contentWidth)` — guarantees visible width ≤ contentWidth (pi-tui utils.js, `truncateToWidth` with `pad=false`)
+3. Calls `visibleWidth(truncated)` — strips ANSI codes, returns true visible columns
+4. Pads with `" ".repeat(contentWidth - visible)` to exactly fill the content area
+5. Wraps in `│ ... │`
 
-```json
-{
-  "questions": [
-    {
-      "question": "Which database should we use?",
-      "header": "Database",
-      "options": [
-        { "label": "PostgreSQL", "description": "Relational, ACID compliant" },
-        { "label": "SQLite", "description": "Embedded, zero config" }
-      ],
-      "multiSelect": false,
-      "custom": true
+Both `truncateToWidth` and `visibleWidth` use the same grapheme segmenter and `graphemeWidth` function in pi-tui, so their width measurements are consistent.
+
+**Minor cosmetic issue**: There is a nested `t.fg("accent", ...)` call inside another `t.fg("accent", ...)`. When `inputDisplay` is the placeholder `t.fg("dim", "Type your answer...")`, the ANSI nesting becomes:
+```
+\x1b[accent] > \x1b[dim]Type your answer...\x1b[0m\x1b[accent]▌\x1b[0m\x1b[0m
+```
+The redundant inner `\x1b[accent]` and outer `\x1b[0m` don't affect the visible width or alignment, but they produce unnecessary ANSI bytes. **Not a layout bug.**
+
+---
+
+## 2. `contentLine()` — Right-Border Alignment Guarantee
+
+**Location**: lines 343–350
+
+```typescript
+private contentLine(content: string, width: number): string {
+    const contentWidth = width - 4; // │ + space (2) + space + │ (2)
+    const truncated = truncateToWidth(content, contentWidth);
+    const visible = visibleWidth(truncated);
+    const padding = " ".repeat(Math.max(0, contentWidth - visible));
+    return `│ ${truncated}${padding} │`;
+}
+```
+
+**Finding: Right border always aligns.** Proof by construction:
+
+- Total width = `1 (│)` + `1 (space)` + `visibleWidth(truncated)` + `(contentWidth - visibleWidth(truncated))` + `1 (space)` + `1 (│)` = `contentWidth + 4` = `width`
+- `truncateToWidth(content, contentWidth)` with default `pad=false` guarantees `visibleWidth(result) ≤ contentWidth`
+- `visibleWidth` strips all ANSI escape sequences (CSI SGR, OSC hyperlinks, APC markers) before measuring — confirmed in `pi-tui/dist/utils.js` lines ~80–130
+- The `graphemeWidth` function used by both `truncateToWidth` and `visibleWidth` handles emoji (width 2), East Asian wide chars (width 2), tabs (width 3), and zero-width characters (width 0)
+
+**Edge case: ANSI codes in truncated content.** When `truncateToWidth` truncates, it calls `finalizeTruncatedResult` which appends `\x1b[0m...\x1b[0m` (SGR resets around the ellipsis). These reset codes have zero visible width. `visibleWidth` correctly strips them. **No miscalculation.**
+
+**Edge case: `truncateToWidth` padding parameter.** The `contentLine` method calls `truncateToWidth(content, contentWidth)` with `pad` defaulting to `false`. Then it manually pads using `visibleWidth(truncated)`. This is redundant (calling `truncateToWidth` with `pad=true` would pad internally), but it's **correct** because both paths use the same width measurement logic.
+
+---
+
+## 3. `invalidate()` Caching
+
+**Location**: `invalidate()` at line 336, `render()` at lines 341–343
+
+```typescript
+invalidate(): void {
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+}
+
+render(width: number): string[] {
+    if (this.cachedLines && this.cachedWidth === width) {
+        return this.cachedLines;
     }
-  ]
+    // ... full render ...
+    this.cachedWidth = width;
+    this.cachedLines = lines;
+    return lines;
 }
 ```
 
-### Constants (questions.ts:13-16)
-```typescript
-export const MAX_QUESTIONS = 4;
-export const MIN_OPTIONS = 2;
-export const MAX_OPTIONS = 4;
-export const MAX_HEADER_LENGTH = 12;
-```
+**Finding: Cache is safe. Terminal width changes cannot cause stale lines.**
 
-### TUI Component: `PlanQuestionPrompt` (questions.ts:44-529)
-
-A keyboard-navigable overlay rendered via `ctx.ui.custom()` with the following modes:
-
-| Mode | Behavior |
-|---|---|
-| **Single question, single-select** | Numbered list, ↑↓/1-9 to pick, Enter to select, auto-submits |
-| **Single question, multi-select** | Checkboxes `[✓]`/`[ ]`, ↑↓ to move, Enter to toggle, Esc to confirm |
-| **Multiple questions** | Tab bar with header labels, Tab/Shift+Tab or ←→ to switch, Review tab before submit |
-| **Custom answer** | "Type your own answer" option, inline text input, Enter to submit |
-| **Review tab** | Shows all answers with ✓/✗ indicators, Enter to submit all, Esc to cancel |
-
-### Key methods
-- `handleInput(data: string)` — keyboard dispatch (questions.ts:113-241)
-- `render(width: number)` — returns array of TUI lines (questions.ts:344-529)
-- `renderQuestionTab()` — renders options list for one question (questions.ts:403-498)
-- `renderReviewTab()` — renders all answers before submit (questions.ts:503-529)
-- `selectCurrentOption()` — pick/toggle/start-editing (questions.ts:246-273)
-- `toggleAnswer()` — multi-select toggle (questions.ts:288-295)
-- `tryAdvance()` — advance to next tab or submit (questions.ts:300-315)
-
-### Tool execution flow (index.ts)
-1. Validate input (empty question, empty header, header too long)
-2. If interactive (`ctx.hasUI && ctx.ui.custom`): launch `PlanQuestionPrompt`, await results
-3. If non-interactive (print/JSON mode): return questions as text for LLM to make assumptions
-4. Returns answers as `string[][]` or `{ dismissed: true }` on Esc
+- When the terminal is resized, the next `render(width)` call receives the new `width`. Since `cachedWidth` (the previous width) ≠ `width`, the cache is bypassed and a full re-render occurs.
+- All state mutations (tab changes, selection changes, editing, answer toggling) flow through `handleInput()` → branches that each call `this.invalidate()`. Verified at lines: 126, 131, 137, 143, 148, 160, 166, 181, 186, 201, 204, 210, 213, 234, 240, 260, 266, 275, 282.
+- `commitCustomAnswer()` (line 288) does NOT call `invalidate()` itself, but it's always called from a `handleInput` branch that calls `invalidate()` immediately afterward (line 136).
+- `selectCurrentOption()` calls `invalidate()` at lines 260, 266, 275.
+- `tryAdvance()` does not call `invalidate()` itself, but every call site does afterward (lines 239, 276, 136).
+- The component has no external state mutators — all state is private and only modified by keyboard input.
 
 ---
 
-## 3. UI-Related Files & Styling
+## 4. `truncateToWidth` Consistency Across All Lines
 
-### There are NO CSS files. This is a terminal/TUI application.
+**Finding: Yes, `truncateToWidth` is consistently applied to every content-bearing line.** The only exceptions are spacer and border lines, which are constructed to exact width and do not need truncation.
 
-All UI is rendered via **pi's TUI SDK** (`@earendil-works/pi-tui`). The styling system uses a theme object with color names:
+| Line | Method | Uses `contentLine`? | Truncation applied? |
+|---|---|---|---|
+| Top border `╭─╮` | `render()` | No (raw) | N/A — exact width |
+| Tab bar line | `render()` | Yes | Yes, via `contentLine` |
+| Spacer lines | `spacerLine()` | No (raw) | N/A — `" ".repeat()` |
+| Question text (wrapped) | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Option labels | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Option descriptions | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Custom option label | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Custom input area | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Custom text (non-selected) | `renderQuestionTab()` | Yes | Yes, via `contentLine` |
+| Help bar | `renderQuestionTab()` / `renderReviewTab()` | Yes | Yes, via `contentLine` |
+| Review header | `renderReviewTab()` | Yes | Yes, via `contentLine` |
+| Review items | `renderReviewTab()` | Yes | Yes, via `contentLine` |
+| Bottom border `╰─╯` | `render()` | No (raw) | N/A — exact width |
 
-### Theme API (pervasive across code)
+The `spacerLine()` method:
 ```typescript
-// From questions.ts:60-66
-theme: {
-    fg: (color: ThemeColor, text: string) => string;
-    bold: (text: string) => string;
+private spacerLine(width: number): string {
+    return `│${" ".repeat(Math.max(0, width - 2))}│`;
+}
+```
+Produces `│` + (width−2) spaces + `│` = total width `width`. No truncation needed.
+
+---
+
+## 5. `renderQuestionTab()` Description Indentation
+
+**Location**: lines 441–444, 485–489
+
+```typescript
+const MARGIN = 2;
+const NESTED_MARGIN = 4;
+const NUM_WIDTH = this.isMultiSelect ? 3 : 2;  // [✓] vs "1."
+
+const descIndent = " ".repeat(NESTED_MARGIN + NUM_WIDTH + 2);
+```
+
+**Finding: Correct for both modes.**
+
+Label text column calculation:
+- `optPrefix(isSel)`: `"  > "` (selected) or `"    "` (unselected) → always **4 chars**
+- `optNumber(i, picked)`: `[✓]`/`[ ]` (multi: **3 chars**) or `1.`…`4.` (single: **2 chars**)
+- Then `"  "` (2 spaces) before the label
+
+Label text starts at column:
+- Single-select: `4 + 2 + 2 = 8`
+- Multi-select: `4 + 3 + 2 = 9`
+
+`descIndent` computes:
+- Single-select: `4 + 2 + 2 = 8` ✓
+- Multi-select: `4 + 3 + 2 = 9` ✓
+
+Descriptions appear below their option and are indented to align with the label text. The indent correctly accounts for prefix width (`NESTED_MARGIN` = 4), checkbox/number width (`NUM_WIDTH`), and the 2-space gap. **No misalignment.**
+
+**Note**: Descriptions are rendered as a single line and truncated via `contentLine` if too long. They do not wrap to multiple lines. This is a UX limitation, not a layout bug — the right border still aligns.
+
+---
+
+## 6. `wrapTextWithAnsi` for Question Text
+
+**Location**: lines 454–462
+
+```typescript
+const questionContent = `${t.fg("text", q.question)}${this.isMultiSelect ? t.fg("dim", " (select all that apply)") : ""}`;
+const innerWidth = Math.max(1, width - 4 - MARGIN);
+const wrappedLines = wrapTextWithAnsi(questionContent, innerWidth);
+for (const line of wrappedLines) {
+    lines.push(this.contentLine(" ".repeat(MARGIN) + line, width));
 }
 ```
 
-### Theme colors used throughout:
-| Color | Usage |
-|---|---|
-| `"accent"` | Selected options, active tab, > cursor |
-| `"success"` | Completed todos (✓), selected answers |
-| `"warning"` | Plan mode status (⏸), unanswered items, partial state |
-| `"muted"` | Completed todo text, option descriptions |
-| `"dim"` | Help bar text, unselected tabs |
-| `"text"` | Normal question/option text |
-| `"border"` | Box-drawing characters (╭─╮, ╰─╯) |
+**Finding: Works correctly for long questions.**
 
-### UI rendering patterns in questions.ts
-```
-╭─────────────────────────────────────────────╮  ← border
-│ [Database] [Auth] [Deploy] [Review]         │  ← tab bar
-│                                             │
-│ Which database should we use?               │  ← question text
-│                                             │
-│   1. PostgreSQL — Relational, ACID compliant│  ← options
-│ > 2. SQLite — Embedded, zero config        │  ← selected (accent)
-│   3. MongoDB — Document store, flexible     │
-│   4. Type your own answer                   │  ← custom option
-│                                             │
-│ ⇆ tab  ↑↓ select  1-4 pick  enter next    │  ← help bar
-╰─────────────────────────────────────────────╯  ← border
-```
+- `innerWidth = width - 4 - 2 = width - 6` — accounts for border padding (4 chars: `│ ` + ` │`) and internal margin (2 chars).
+- `wrapTextWithAnsi` returns lines where each is ≤ `innerWidth` visible chars.
+- Each line is prepended with `MARGIN` (2 spaces), making it ≤ `innerWidth + 2 = width - 4 = contentWidth` visible chars.
+- The concatenated `"  " + line` passes through `contentLine`, which truncates to `contentWidth`. Since the line already fits, truncation is a no-op.
+- `wrapTextWithAnsi` correctly preserves ANSI codes across line breaks (via `AnsiCodeTracker` in pi-tui). Active styles (bold, dim, colors) carry over from one wrapped line to the next.
 
-### UI Components in index.ts
-1. **Footer status** (`ctx.ui.setStatus("plan-mode", ...)`) — lines 307-317
-   - Plan mode: `"⏸ plan"` (warning color)
-   - Execution: `"📋 N/M"` (accent color)
-2. **Plan progress widget** (`ctx.ui.setWidget("plan-todos", ...)`) — lines 320-343
-   - Completed: `"✓ "` (success) + strikethrough text (muted)
-   - Pending: `"○ "` (muted) + text (accent)
-3. **Custom message renderer** (`pi.registerMessageRenderer("plan-content", ...)`) — lines 288-296
-   - Renders plan content via `Markdown` component from pi-tui
-4. **Notifications** (`ctx.ui.notify(...)`) — used for command feedback, errors, warnings
+**Edge case**: The `questionContent` string has mixed ANSI styles — `t.fg("text", ...)` for the question body and `t.fg("dim", ...)` for the multi-select hint. `wrapTextWithAnsi` handles mixed styles correctly by tracking active SGR codes in a `AnsiCodeTracker`.
 
 ---
 
-## 4. Margin/Padding/Styling Patterns
+## 7. Misaligned Right `│` Border — Complete Line Audit
 
-### There is no CSS margin/padding — all layout is done with text characters in the TUI.
+**Finding: No misaligned right border found.** Every line that could exceed the content area passes through `contentLine`, which guarantees:
 
-Key patterns found:
+1. Truncation to `contentWidth` visible characters (via `truncateToWidth`)
+2. Measurement of visible width after truncation (via `visibleWidth`)
+3. Space-padding to exactly fill `contentWidth`
 
-### Padding (questions.ts:351)
-```typescript
-const contentWidth = width - 4; // 2 chars padding each side
-```
-All content is padded with 2 characters on each side (a leading `│ ` and trailing ` │`).
+### Line-by-line audit:
 
-### Border characters (questions.ts:355, 395)
-- Top: `╭` + repeated `─` + `╮`
-- Bottom: `╰` + repeated `─` + `╯`
+| Line type | Width calculation | Risk |
+|---|---|---|
+| Tab bar (`"  " + tabs`) | `contentLine` → truncate + pad | None |
+| Spacer | `" ".repeat(width - 2)` in `│…│` | None (exact) |
+| Wrapped question + margin | Wrapped ≤ `width-6`, +2 margin ≤ `width-4` → `contentLine` no-op | None |
+| Option label | `prefix(4) + number(2-3) + "  " + label` → `contentLine` | None |
+| Option description | `descIndent(8-9) + description` → `contentLine` | None |
+| Custom label | Same as option label | None |
+| Custom input | `indent(4) + "> " + input + "▌"` → `contentLine` | None |
+| Custom text (shown) | `indent(4) + customText` → `contentLine` | None |
+| Help bar | `"  " + help` → `contentLine` | None |
+| Review header | `"  " + "Review your answers:"` → `contentLine` | None |
+| Review items | `indent(4) + icon + " " + header + ": " + answers` → `contentLine` | None |
+| Borders | `╭${"─".repeat(width-2)}╮` — exact width | None |
 
-### Truncation pattern (used throughout questions.ts)
-```typescript
-`│ ${truncateToWidth(someText, contentWidth)} │`
-```
-All lines are truncated to fit within the content width. `truncateToWidth` is imported from `@earendil-works/pi-tui`.
+### Potential visual issues (not alignment bugs):
 
-### Spacer lines (questions.ts:390-391, 422-423)
-```typescript
-lines.push(`│${" ".repeat(Math.max(0, width - 2))}│`);
-```
-Empty lines use `" ".repeat()` for padding.
+1. **ANSI reset in truncated text** (pi-tui `finalizeTruncatedResult`): When `truncateToWidth` truncates, it inserts `\x1b[0m` before and after the ellipsis. This means padding spaces after truncated text are unstyled. For a colored option that gets truncated, the padding would be default terminal color behind the `│` border. This is a *visual* inconsistency but does NOT affect alignment.
 
-### Indentation for descriptions (questions.ts:447-451)
-```typescript
-const descStyle = isSelected
-    ? t.fg("muted", `   ${t.fg("accent", opt.description)}`)    // 3 spaces indent
-    : t.fg("muted", `   ${opt.description}`);
-```
+2. **`t.fg("dim", "")` in help bar** (line 528 in single-select path): `t.fg("dim", "")` produces just ANSI codes with no visible text. `visibleWidth` strips these, so the help bar width calculation is correct. The ANSI codes are harmless but wasteful.
 
-### Help bar (questions.ts:494-497)
-```typescript
-lines.push(`│ ${truncateToWidth(`  ${help}`, contentWidth)} │`); // 2-space indent
-```
-
-### Markdown rendering (index.ts:291-293)
-```typescript
-const mdTheme = getMarkdownTheme();
-const md = new Markdown(rawContent, 1, 0, mdTheme);
-//                                ^  ^-- left margin: 0
-//                                |---- top margin: 1
-```
+3. **Descriptions don't wrap**: Long option descriptions are truncated with "…" rather than wrapped to multiple lines. This is consistent behavior (same as option labels) but could hide useful information.
 
 ---
 
-## 5. Tech Stack
+## Summary of Findings
 
-| Layer | Technology |
-|---|---|
-| **Language** | TypeScript (ES2022, strict mode) |
-| **Module system** | ESM (`"type": "module"` in package.json) |
-| **Module resolution** | bundler (tsconfig.json) |
-| **Runtime** | Node.js (pi runs on Node) |
-| **UI Framework** | **Terminal/TUI** — not a web browser, no React/DOM |
-| **TUI library** | `@earendil-works/pi-tui` (Markdown, Key, truncateToWidth) |
-| **Agent SDK** | `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent` |
-| **Schema validation** | TypeBox (`typebox` v1.1.0+) |
-| **Linting/formatting** | Biome (`@biomejs/biome` v2.4.0) |
-| **CI** | GitHub Actions (type-check + lint, release-please) |
-| **Publishing** | npm (with provenance) |
+| Check | Result | Severity |
+|---|---|---|
+| 1. Custom input line truncation alignment | ✅ Correct — right border always aligns | None |
+| 2. `contentLine()` ANSI edge cases | ✅ Handled — `visibleWidth` strips ANSI, `truncateToWidth` preserves them | None |
+| 3. `invalidate()` cache with width changes | ✅ Safe — width mismatch triggers re-render; all mutations invalidate | None |
+| 4. `truncateToWidth` on all lines | ✅ Consistent — every content line goes through `contentLine` | None |
+| 5. Description indentation | ✅ Correct for both single-select and multi-select | None |
+| 6. `wrapTextWithAnsi` for long questions | ✅ Correct — `innerWidth` accounts for border + margin | None |
+| 7. Right `│` border misalignment | ✅ No misalignment found | None |
 
-### Rendering is entirely TUI/terminal-based:
-- `Markdown` component renders markdown as styled terminal output
-- `ctx.ui.custom()` renders custom overlay components (like PlanQuestionPrompt)
-- `ctx.ui.setStatus()` renders footer status bar
-- `ctx.ui.setWidget()` renders sidebar widgets (plan todos)
-- `ctx.ui.notify()` shows notifications
-- `ctx.ui.theme.fg(color, text)` applies terminal colors
+**No layout bugs found that would cause right-border misalignment.** The `contentLine` method's use of `truncateToWidth` + `visibleWidth` + manual padding is sound. The pi-tui utility functions correctly handle all ANSI codes, emoji, wide characters, and tabs in width calculations.
 
-### Dependencies (peer, v0.74.0 minimum):
-- `@earendil-works/pi-agent-core`
-- `@earendil-works/pi-ai`
-- `@earendil-works/pi-coding-agent`
-- `@earendil-works/pi-tui`
-- `typebox`
-
----
-
-## 6. Key Architectural Patterns
-
-### State Machine
-```
-Normal Mode ←→ Plan Mode (read-only) → Execution Mode → Normal Mode
-```
-
-### State persisted across restarts via `pi.appendEntry("plan-mode-v2", ...)`
-
-### Tool restriction via regex
-- 32 `DESTRUCTIVE_PATTERNS` (rm, mv, git commit, npm install, etc.)
-- 34 `SAFE_PATTERNS` (cat, grep, find, ls, git status, etc.)
-
-### 3 Commands
-- `/plan` — toggle plan mode
-- `/plans` — list saved plans
-- `/execute_plan [name]` — enter execution mode with optional plan
-
-### 4 LLM-callable Tools
-- `plan_write` — save a plan
-- `plan_read` — read a plan
-- `plan_list` — list plans
-- `plan_question` — interactive clarifying questions
-
-### 6 Events Hooked
-- `tool_call` — blocks destructive bash
-- `before_agent_start` — injects system prompts
-- `turn_end` — tracks [DONE:n] markers
-- `agent_end` — completion detection, pause points, todo extraction
-- `session_start` — state restoration, --plan flag
-- `context` — filters stale plan-mode context
-
----
-
-## Start Here
-
-Open **`extensions/plan-mode/index.ts`** — the 600+ line main entry point containing the `planModeExtension` default export function. All state, commands, tools, events, and UI logic are registered here.
-
-For the question tool TUI specifically: **`extensions/plan-mode/questions.ts`** — the `PlanQuestionPrompt` class with keyboard handling and terminal rendering.
+### Non-blocking cosmetic observations:
+- Nested `t.fg("accent", ...)` in custom input line creates redundant ANSI escape codes
+- `t.fg("dim", "")` produces zero-width ANSI codes in the help bar
+- Option descriptions are truncated rather than wrapped when too long
+- Truncated text may lose styling on padding spaces (ANSI reset from `truncateToWidth`'s ellipsis handling)
