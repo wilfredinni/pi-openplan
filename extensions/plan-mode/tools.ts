@@ -79,6 +79,17 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 
 				const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
 				metrics.record("plan-content", planMessageContent.length);
+
+				// Display the plan as a rendered markdown message in the conversation
+				pi.sendMessage(
+					{
+						customType: "plan-content",
+						content: planMessageContent,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
 				ctx.ui.notify(
 					`Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
 					"info",

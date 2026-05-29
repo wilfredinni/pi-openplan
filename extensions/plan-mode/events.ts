@@ -172,8 +172,8 @@ export function registerEvents(
 			}
 		}
 
-		// Show plan steps if extracted (skip when TUI widget visible)
-		if (state.todoItems.length > 0 && !ctx.hasUI) {
+		// Show plan steps if extracted
+		if (state.todoItems.length > 0) {
 			const todoListText = state.todoItems
 				.map((t, i) => `${i + 1}. ○ ${t.text}`)
 				.join("\n");
