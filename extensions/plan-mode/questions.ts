@@ -54,7 +54,6 @@ export type PlanQuestionOutput = string[][];
 export class PlanQuestionPrompt {
 	private questions: PlanQuestion[];
 	private done: (result: string[][] | null) => void;
-	private tui: { requestRender: () => void };
 	private theme: {
 		fg: (color: ThemeColor, text: string) => string;
 		bold: (text: string) => string;
@@ -72,7 +71,6 @@ export class PlanQuestionPrompt {
 
 	constructor(
 		questions: PlanQuestion[],
-		tui: { requestRender: () => void },
 		theme: {
 			fg: (color: ThemeColor, text: string) => string;
 			bold: (text: string) => string;
@@ -80,7 +78,6 @@ export class PlanQuestionPrompt {
 		done: (result: string[][] | null) => void,
 	) {
 		this.questions = questions;
-		this.tui = tui;
 		this.theme = theme;
 		this.done = done;
 		this.answers = questions.map(() => []);
@@ -379,8 +376,7 @@ export class PlanQuestionPrompt {
 		// ── Tab bar ─────────────────────────────────────────────
 		if (this.tabCount > 1) {
 			const tabParts: string[] = [];
-			for (let i = 0; i < this.questions.length; i++) {
-				const q = this.questions[i]!;
+			for (const [i, q] of this.questions.entries()) {
 				const answered = (this.answers[i]?.length ?? 0) > 0;
 				const isActive = i === this.currentTab;
 				const label =
@@ -465,8 +461,7 @@ export class PlanQuestionPrompt {
 		lines.push(this.spacerLine(width));
 
 		// ── Options ─────────────────────────────────────────────
-		for (let i = 0; i < q.options.length; i++) {
-			const opt = q.options[i]!;
+		for (const [i, opt] of q.options.entries()) {
 			const isSel = i === this.selectedIndex;
 			const isPicked =
 				this.answers[this.currentTab]?.includes(opt.label) ?? false;
@@ -563,8 +558,7 @@ export class PlanQuestionPrompt {
 		);
 		lines.push(this.spacerLine(width));
 
-		for (let i = 0; i < this.questions.length; i++) {
-			const q = this.questions[i]!;
+		for (const [i, q] of this.questions.entries()) {
 			const answer = this.answers[i] ?? [];
 			const answered = answer.length > 0;
 			const icon = answered ? "✓" : "✗";
