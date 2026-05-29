@@ -1,6 +1,6 @@
 # pi-openplan
 
-> Plan mode extension for [pi](https://pi.dev) — read-only exploration with structured planning, plan files, and phased execution tracking.
+> Plan mode extension for the [pi](https://pi.dev) Coding agent — read-only exploration with structured planning, plan files, and phased execution tracking.
 
 **pi-openplan** adds a full-featured plan mode to pi, inspired by OpenCode's plan mode workflow. Toggle it on to safely explore codebases, research approaches, write structured plans, and then execute them phase by phase with progress tracking.
 
