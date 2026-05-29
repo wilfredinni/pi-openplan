@@ -11,6 +11,7 @@
 | 🔒 **Read-only mode** | Restricts tools to read-only (read, grep, find, ls, safe bash). Blocks destructive commands. |
 | 📝 **Structured plans** | Save plans to `.pi/plans/` with YAML frontmatter (title, status, type, dates). |
 | 📋 **Plan file management** | LLM-callable tools: `plan_write`, `plan_read`, `plan_list` with status filtering. |
+| ❓ **Interactive Q&A** | `plan_question` tool presents structured clarifying questions in a TUI overlay with options, multi-select, and free-text answers. |
 | 🎯 **Progress tracking** | Mark plan steps complete with `[DONE:n]` tags — widget shows live progress. |
 | ⏸️ **Pause points** | Detection of `⏸️ PAUSE` markers in plans for verification gates. |
 | 🔄 **State persistence** | Plan mode state, todos, and execution mode survive session restarts and `/reload`. |
@@ -114,6 +115,29 @@ List all saved plans, optionally filtered by status (draft, approved, in_progres
   "status": "draft"
 }
 ```
+
+### `plan_question`
+
+Present interactive clarifying questions to the user with predefined options. Supports single-select, multi-select, and custom free-text answers. Batch multiple related questions in one call. Returns the user's selected answers.
+
+```json
+{
+  "questions": [
+    {
+      "question": "Which database should we use?",
+      "header": "Database",
+      "options": [
+        { "label": "PostgreSQL", "description": "Relational, ACID compliant" },
+        { "label": "SQLite", "description": "Embedded, zero config" }
+      ],
+      "multiSelect": false,
+      "custom": true
+    }
+  ]
+}
+```
+
+When called in interactive mode, the user sees a keyboard-navigable TUI overlay with numbered options, tab-based navigation for multiple questions, and an inline text editor for custom answers. In print mode, questions are returned as text for the LLM to make reasonable assumptions.
 
 ## Plan File Format
 

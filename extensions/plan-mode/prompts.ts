@@ -49,7 +49,15 @@ any loose ends before implementation begins.
 
 ### Step 4: Clarify
 - Present your understanding to the user
-- ASK clarifying questions — do not guess about:
+- Use the **\`plan_question\`** tool to ask structured clarifying questions with predefined options.
+  Do NOT ask questions inline — use the tool for a better interactive UX.
+- Each question must have a short header (≤12 chars) and 2-4 options with clear labels
+  and descriptions. Users can also type their own answer.
+- When there are multiple independent questions, batch them in one call (max 4).
+- For single-choice questions, set \`multiSelect: false\` (default). For things like
+  "select features you want", set \`multiSelect: true\`.
+- Always allow custom answers by leaving \`custom: true\` (default).
+- Do not guess about:
   * Scope boundaries (what's in / out)
   * Priority and tradeoffs
   * Constraints not visible in the code

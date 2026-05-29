@@ -37,6 +37,14 @@ import {
 	updatePlanStatus,
 } from "./plan-files.ts";
 import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
+import {
+	type PlanQuestionInput,
+	PlanQuestionPrompt,
+	MAX_QUESTIONS,
+	MAX_HEADER_LENGTH,
+	MIN_OPTIONS,
+	MAX_OPTIONS,
+} from "./questions.ts";
 
 // ── Tool Sets ──────────────────────────────────────────────────────────
 
@@ -61,6 +69,7 @@ const PLAN_MODE_TOOLS = [
 	"plan_write",
 	"plan_read",
 	"plan_list",
+	"plan_question",
 ];
 
 /** Tools restored when exiting plan mode */
@@ -468,6 +477,179 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.registerShortcut(Key.ctrlAlt("p"), {
 		description: "Toggle plan mode",
 		handler: async (ctx) => togglePlanMode(ctx),
+	});
+
+	// ── Plan Question Tool ────────────────────────────────────────────
+
+	pi.registerTool({
+		name: "plan_question",
+		label: "Ask Questions",
+		description:
+			"Present interactive clarifying questions to the user. Use during plan mode to ask structured questions with predefined options. Supports single-select, multi-select, and custom text answers. Batch multiple related questions in one call. Returns answers as arrays mapping to each question.",
+		promptSnippet: "Ask structured clarifying questions with options",
+		promptGuidelines: [
+			"Use plan_question to ask structured clarifying questions with predefined options. Do NOT ask questions inline — use the tool for a better interactive UX.",
+			"Each question must have a short header (max 12 chars) and 2-4 options with clear labels and descriptions.",
+			"Batch multiple related questions in one call (max 4 questions per call).",
+		],
+		parameters: Type.Object({
+			questions: Type.Array(
+				Type.Object({
+					question: Type.String({
+						description: "Full question text to display",
+					}),
+					header: Type.String({
+						description:
+							"Short label for tab display (max 12 characters)",
+					}),
+					options: Type.Array(
+						Type.Object({
+							label: Type.String({
+								description: "Option label shown to user",
+							}),
+							description: Type.String({
+								description: "Brief description of this option",
+							}),
+						}),
+						{
+							minItems: MIN_OPTIONS,
+							maxItems: MAX_OPTIONS,
+							description:
+								"2-4 predefined options with label and description",
+						},
+					),
+					multiSelect: Type.Optional(
+						Type.Boolean({
+							description:
+								"Allow multiple selections (checkboxes). Default: false",
+						}),
+					),
+					custom: Type.Optional(
+						Type.Boolean({
+							description:
+								"Allow free-text 'Other' answer. Default: true",
+						}),
+					),
+				}),
+				{
+					minItems: 1,
+					maxItems: MAX_QUESTIONS,
+					description: "1-4 questions to ask",
+				},
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const input = params as unknown as PlanQuestionInput;
+
+			// Validate input
+			for (const q of input.questions) {
+				if (!q.question?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: question text is empty. Each question must have non-empty text.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (!q.header?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header is empty for question "${q.question.slice(0, 40)}...". Each question needs a short header label.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (q.header.length > MAX_HEADER_LENGTH) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+			}
+
+			// Interactive mode: present as TUI overlay
+			if (ctx.hasUI && ctx.ui.custom) {
+				const result = await ctx.ui.custom<string[][] | null>(
+					(tui, theme, _kb, done) => {
+						const prompt = new PlanQuestionPrompt(
+							input.questions,
+							tui,
+							theme,
+							done,
+						);
+						return {
+							render: (w: number) => prompt.render(w),
+							invalidate() {
+								prompt.invalidate();
+							},
+							handleInput(data: string) {
+								prompt.handleInput(data);
+								tui.requestRender();
+							},
+						};
+					},
+				);
+
+				if (result === null) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "Questions were dismissed by the user. Proceed with your best judgment based on what you know, or make reasonable assumptions.",
+							},
+						],
+						details: { dismissed: true },
+					};
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `User answers received:\n${result
+								.map((answers, i) => {
+									const header = input.questions[i]?.header ?? `Q${i + 1}`;
+									return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
+								})
+								.join("\n")}`,
+						},
+					],
+					details: { answers: result },
+				};
+			}
+
+			// Non-interactive mode (print / JSON): return questions as text
+			const questionText = input.questions
+				.map(
+					(q, i) =>
+						`Question ${i + 1}: ${q.question}\nOptions:\n${q.options.map((o, j) => `  ${j + 1}. ${o.label} — ${o.description}`).join("\n")}${q.custom !== false ? `\n  or type your own answer` : ""}`,
+				)
+				.join("\n\n");
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`,
+					},
+				],
+				details: { nonInteractive: true },
+			};
+		},
 	});
 
 	// ── Plan Management Tools ───────────────────────────────────────────

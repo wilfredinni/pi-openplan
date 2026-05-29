@@ -4,7 +4,7 @@
 	"description": "Plan mode extension for pi — read-only exploration with structured planning, plan files, and phased execution tracking",
 	"type": "module",
 	"license": "MIT",
-	"author": "Carlos",
+	"author": "Carlos Montecinos",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/wilfredinni/pi-openplan"
