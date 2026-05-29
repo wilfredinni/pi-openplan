@@ -39,7 +39,12 @@ import {
 	slugify,
 	updatePlanStatus,
 } from "./plan-files.ts";
-import { EXECUTION_MODE_PROMPT, PLAN_MODE_SYSTEM_PROMPT } from "./prompts.ts";
+import {
+	EXECUTION_MODE_PROMPT,
+	PLAN_AMEND_SYSTEM_PROMPT,
+	PLAN_MODE_SYSTEM_PROMPT,
+	PLAN_REVISE_SYSTEM_PROMPT,
+} from "./prompts.ts";
 import {
 	MAX_HEADER_LENGTH,
 	MAX_OPTIONS,
@@ -284,6 +289,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── State ──────────────────────────────────────────────────────────
 	let planModeEnabled = false;
 	let executionMode = false;
+	let planReviseMode = false;
+	let planAmendMode = false;
+	let pendingPlanContent = "";
+	let pendingPlanTitle = "";
 	let todoItems: TodoItem[] = [];
 
 	// ── Plan Content Renderer ──────────────────────────────────────────
@@ -307,7 +316,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	function updateUI(ctx: ExtensionContext): void {
 		// Footer status
-		if (executionMode && todoItems.length > 0) {
+		if (planAmendMode) {
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "✎ amend"));
+		} else if (planReviseMode) {
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "✎ revise"));
+		} else if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
 			ctx.ui.setStatus(
 				"plan-mode",
@@ -351,6 +364,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			enabled: planModeEnabled,
 			todos: todoItems,
 			executing: executionMode,
+			revising: planReviseMode,
+			amending: planAmendMode,
+			pendingPlanContent,
+			pendingPlanTitle,
 		});
 	}
 
@@ -359,6 +376,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function enterPlanMode(ctx: ExtensionContext): void {
 		planModeEnabled = true;
 		executionMode = false;
+		planReviseMode = false;
+		planAmendMode = false;
+		pendingPlanContent = "";
+		pendingPlanTitle = "";
 		pi.setActiveTools(PLAN_MODE_TOOLS);
 		ctx.ui.notify(
 			`Plan mode enabled — read-only. Tools: read, grep, find, ls, bash (safe), subagent, research, plan_write`,
@@ -371,6 +392,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function exitPlanMode(ctx: ExtensionContext): void {
 		planModeEnabled = false;
 		executionMode = false;
+		planReviseMode = false;
+		planAmendMode = false;
+		pendingPlanContent = "";
+		pendingPlanTitle = "";
 		todoItems = [];
 		pi.setActiveTools(NORMAL_MODE_TOOLS);
 		ctx.ui.notify("Plan mode disabled — full access restored.", "info");
@@ -392,6 +417,107 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		description:
 			"Toggle plan mode (read-only exploration with structured planning)",
 		handler: async (_args, ctx) => togglePlanMode(ctx),
+	});
+
+	pi.registerCommand("plan_revise", {
+		description:
+			"Load an existing plan and re-enter plan mode to revise it. Provide a plan name as argument.",
+		handler: async (args, ctx) => {
+			const planName = args?.trim();
+			if (!planName) {
+				ctx.ui.notify(
+					"Usage: /plan_revise <plan-name> — provide the plan name to revise.",
+					"warning",
+				);
+				return;
+			}
+
+			try {
+				const plan = readPlanFile(ctx.cwd, planName);
+				if (!plan) {
+					ctx.ui.notify(
+						`No plan found matching "${planName}". Use /plans to list available plans.`,
+						"error",
+					);
+					return;
+				}
+
+				// Enter plan mode if not already
+				if (!planModeEnabled) {
+					enterPlanMode(ctx);
+				}
+
+				planReviseMode = true;
+				pendingPlanContent = plan.content;
+				pendingPlanTitle = plan.metadata.title;
+
+				// Increment version
+				const newVersion = (plan.metadata.version ?? 1) + 1;
+
+				ctx.ui.notify(
+					`Loaded plan: ${plan.metadata.title} (v${plan.metadata.version ?? 1}). Revise and save with plan_write.`,
+					"info",
+				);
+
+				updateUI(ctx);
+				persistState();
+
+				// Send the plan to the agent for revision
+				pi.sendUserMessage(
+					`Revise the plan: **${plan.metadata.title}** (v${plan.metadata.version ?? 1} → v${newVersion})\n\nCurrent plan:\n${plan.content}\n\nApply the requested changes. When done, use plan_write to save the updated plan. The version in frontmatter should be ${newVersion}.`,
+				);
+			} catch (err) {
+				ctx.ui.notify(
+					`Failed to load plan: ${err instanceof Error ? err.message : String(err)}`,
+					"error",
+				);
+			}
+		},
+	});
+
+	pi.registerCommand("plan_amend", {
+		description:
+			"Pause execution and modify the remaining phases of the current plan.",
+		handler: async (_args, ctx) => {
+			if (!executionMode || todoItems.length === 0) {
+				ctx.ui.notify(
+					"No active plan execution to amend. Start with /execute_plan first.",
+					"warning",
+				);
+				return;
+			}
+
+			planAmendMode = true;
+
+			// Build plan content with completion status
+			const remaining = todoItems.filter((t) => !t.completed);
+			const doneItems = todoItems.filter((t) => t.completed);
+			const statusLines = [
+				"## Completion Status",
+				"",
+				"### Completed",
+				...doneItems.map((t) => `- [DONE:${t.step}] ${t.text}`),
+				"",
+				"### Remaining",
+				...remaining.map((t) => `- [PENDING:${t.step}] ${t.text}`),
+				"",
+				"---",
+			];
+			pendingPlanContent = statusLines.join("\n");
+			pendingPlanTitle = "Plan Amendment";
+
+			ctx.ui.notify(
+				"Execution paused. Modify the remaining phases, then use plan_write to save.",
+				"info",
+			);
+
+			updateUI(ctx);
+			persistState();
+
+			pi.sendUserMessage(
+				`${PLAN_AMEND_SYSTEM_PROMPT}\n\nCurrent plan status:\n${pendingPlanContent}\n\nApply the requested changes. Use plan_write to save the amended plan.`,
+			);
+		},
 	});
 
 	pi.registerCommand("plans", {
@@ -684,6 +810,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					title: params.title,
 					status: "draft",
 					created: new Date().toISOString(),
+					version: 1,
 					type: (params.type as PlanMetadata["type"]) ?? "feature",
 				};
 				const result = createPlanFile(
@@ -861,6 +988,26 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── Event: Inject System Prompts ────────────────────────────────────
 
 	pi.on("before_agent_start", async () => {
+		if (planReviseMode && pendingPlanContent) {
+			return {
+				message: {
+					customType: "plan-revise-context",
+					content: `${PLAN_REVISE_SYSTEM_PROMPT}\n\n## Current Plan: ${pendingPlanTitle}\n\n${pendingPlanContent}`,
+					display: false,
+				},
+			};
+		}
+
+		if (planAmendMode && pendingPlanContent) {
+			return {
+				message: {
+					customType: "plan-amend-context",
+					content: `${PLAN_AMEND_SYSTEM_PROMPT}\n\n## Current Plan Status\n\n${pendingPlanContent}`,
+					display: false,
+				},
+			};
+		}
+
 		if (planModeEnabled) {
 			return {
 				message: {
@@ -900,6 +1047,16 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── Event: Plan Completion & Next Actions ───────────────────────────
 
 	pi.on("agent_end", async (event, ctx) => {
+		// Clear revise/amend modes after the agent has processed them
+		if (planReviseMode || planAmendMode) {
+			planReviseMode = false;
+			planAmendMode = false;
+			pendingPlanContent = "";
+			pendingPlanTitle = "";
+			updateUI(ctx);
+			persistState();
+		}
+
 		// Check if execution is complete
 		if (executionMode && todoItems.length > 0) {
 			const allDone = todoItems.every((t) => t.completed);
@@ -990,13 +1147,27 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					e.type === "custom" && e.customType === "plan-mode-v2",
 			)
 			.pop() as
-			| { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } }
+			| {
+					data?: {
+						enabled: boolean;
+						todos?: TodoItem[];
+						executing?: boolean;
+						revising?: boolean;
+						amending?: boolean;
+						pendingPlanContent?: string;
+						pendingPlanTitle?: string;
+					};
+			  }
 			| undefined;
 
 		if (planModeEntry?.data) {
 			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
 			todoItems = planModeEntry.data.todos ?? todoItems;
 			executionMode = planModeEntry.data.executing ?? executionMode;
+			planReviseMode = planModeEntry.data.revising ?? false;
+			planAmendMode = planModeEntry.data.amending ?? false;
+			pendingPlanContent = planModeEntry.data.pendingPlanContent ?? "";
+			pendingPlanTitle = planModeEntry.data.pendingPlanTitle ?? "";
 		}
 
 		// On resume, re-scan messages for [DONE:n] markers
@@ -1036,7 +1207,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── Event: Filter Stale Plan Context ────────────────────────────────
 
 	pi.on("context", async (event) => {
-		if (planModeEnabled || executionMode) return;
+		if (planModeEnabled || executionMode || planReviseMode || planAmendMode)
+			return;
 
 		// When not in plan mode, clean up plan-mode context messages
 		return {
@@ -1044,7 +1216,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				const msg = m as AgentMessage & { customType?: string };
 				if (
 					msg.customType === "plan-mode-context" ||
-					msg.customType === "plan-execution-context"
+					msg.customType === "plan-execution-context" ||
+					msg.customType === "plan-revise-context" ||
+					msg.customType === "plan-amend-context"
 				) {
 					return false;
 				}

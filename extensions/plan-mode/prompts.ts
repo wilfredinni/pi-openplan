@@ -196,6 +196,30 @@ to the next phase.
 When all phases are complete, summarize what was implemented and verify
 against the plan's success criteria.`;
 
+export const PLAN_REVISE_SYSTEM_PROMPT = `[Plan Mode ACTIVE — REVISING]
+
+You are revising an existing plan. The current plan is loaded below.
+The user has feedback or changes they want. Read the plan, understand what
+needs to change, then use plan_write to save the updated version.
+
+Do NOT make any changes to project files. Only update the plan.
+Preserve any completed phases. Focus on improving the remaining phases.
+Increment the plan version to reflect this revision.
+`;
+
+export const PLAN_AMEND_SYSTEM_PROMPT = `[PLAN AMENDMENT — Pausing execution]
+
+Execution is paused. The current plan is loaded with completion status below.
+The user wants to modify the remaining phases. You can:
+- Add new phases
+- Remove phases (mark as skipped)
+- Reorder phases
+- Modify phase content
+
+Once done, use plan_write to save the amended plan. Execution will resume
+from the first incomplete phase.
+`;
+
 export const PLAN_TEMPLATE = `---
 title: "$TITLE"
 status: draft

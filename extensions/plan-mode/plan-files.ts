@@ -15,6 +15,8 @@ export interface PlanMetadata {
 	status: "draft" | "approved" | "in_progress" | "done";
 	created: string;
 	updated?: string;
+	version: number;
+	previousVersion?: string;
 	type: "feature" | "fix" | "refactor" | "chore";
 }
 
@@ -75,6 +77,9 @@ function serializeFrontmatter(metadata: PlanMetadata): string {
 		`created: "${metadata.created}"`,
 	];
 	if (metadata.updated) lines.push(`updated: "${metadata.updated}"`);
+	lines.push(`version: ${metadata.version}`);
+	if (metadata.previousVersion)
+		lines.push(`previousVersion: "${metadata.previousVersion}"`);
 	lines.push(`type: ${metadata.type}`);
 	lines.push("---");
 	return `${lines.join("\n")}\n\n`;
@@ -128,6 +133,7 @@ export function readPlanFile(cwd: string, filename: string): PlanFile | null {
 			title: metadata.title ?? path.basename(filepath, ".md"),
 			status: metadata.status ?? "draft",
 			created: metadata.created ?? new Date().toISOString(),
+			version: metadata.version ?? 1,
 			type: metadata.type ?? "feature",
 			updated: metadata.updated,
 		},
@@ -196,4 +202,14 @@ export function slugify(text: string): string {
 		.replace(/^-|-$/g, "")
 		.slice(0, 80);
 	return `${date}-${slug}`;
+}
+
+/**
+ * Get the current version of a plan from its frontmatter.
+ * Returns 0 if the plan doesn't exist or frontmatter lacks a version.
+ */
+export function getPlanVersion(cwd: string, filename: string): number {
+	const plan = readPlanFile(cwd, filename);
+	if (!plan) return 0;
+	return plan.metadata.version ?? 1;
 }
