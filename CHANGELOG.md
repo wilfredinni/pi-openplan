@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/wilfredinni/pi-openplan/compare/v1.0.0...v1.1.0) (2026-05-29)
+
+
+### Features
+
+* Add visibleWidth and wrapTextWithAnsi imports for text layout ([04003a0](https://github.com/wilfredinni/pi-openplan/commit/04003a07d805b5cedbcf9abe1a32a2f20f37a2b9))
+
 ## 1.0.0 (2026-05-28)
 
 
