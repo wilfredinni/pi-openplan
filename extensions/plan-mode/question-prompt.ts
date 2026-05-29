@@ -6,7 +6,7 @@
  * via a keyboard-navigable TUI overlay with options, multi-select, custom text.
  */
 
-import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ThemeColor } from "@earendil-works/pi-coding-agent";
 import {
 	Key,
 	matchesKey,
@@ -14,6 +14,8 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import type { PlanModeState } from "./state.ts";
 
 // ── Constants ─────────────────────────────────────────────────────
 
@@ -150,7 +152,6 @@ export class PlanQuestionPrompt {
 				return;
 			}
 			if (matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
-				// Allow cursor movement within input (handled by terminal)
 				return;
 			}
 			// Printable character
@@ -514,12 +515,10 @@ export class PlanQuestionPrompt {
 			if (this.editing && isSel) {
 				const inputDisplay =
 					this.inputBuffer || t.fg("dim", "Type your answer...");
-				// Show input line at NESTED_MARGIN with cursor prompt
 				const inputPrefix = " ".repeat(NESTED_MARGIN);
 				const inputContent = `${inputPrefix}${t.fg("accent", `> ${inputDisplay}${t.fg("accent", "▌")}`)}`;
 				lines.push(this.contentLine(inputContent, width));
 			} else if (hasCustomText && !isSel) {
-				// When custom text was entered but user is elsewhere, show it as muted
 				const inputPrefix = " ".repeat(NESTED_MARGIN);
 				lines.push(
 					this.contentLine(`${inputPrefix}${t.fg("muted", customText)}`, width),
@@ -582,4 +581,175 @@ export class PlanQuestionPrompt {
 		const help = `${t.fg("dim", "↑↓")} scroll  ${t.fg("dim", "enter")} submit  ${t.fg("dim", "esc")} cancel`;
 		lines.push(this.contentLine(" ".repeat(MARGIN) + help, width));
 	}
+}
+
+// ── Tool Factory ────────────────────────────────────────────────────────
+
+export function registerPlanQuestionTool(
+	pi: ExtensionAPI,
+	state: PlanModeState,
+): void {
+	pi.registerTool({
+		name: "plan_question",
+		label: "Ask Questions",
+		description:
+			"Ask structured clarifying questions. Supports single-select, multi-select, and custom text. Batch up to 4 questions per call.",
+		promptSnippet: "Ask structured clarifying questions",
+		promptGuidelines: [
+			"Use plan_question instead of asking inline. Batch up to 4 questions, 2-4 options each, headers ≤12 chars.",
+		],
+		parameters: Type.Object({
+			questions: Type.Array(
+				Type.Object({
+					question: Type.String({
+						description: "Question text",
+					}),
+					header: Type.String({
+						description: "Tab label, ≤12 chars",
+					}),
+					options: Type.Array(
+						Type.Object({
+							label: Type.String({
+								description: "Option label",
+							}),
+							description: Type.String({
+								description: "Option description",
+							}),
+						}),
+						{
+							minItems: MIN_OPTIONS,
+							maxItems: MAX_OPTIONS,
+							description: "2-4 options",
+						},
+					),
+					multiSelect: Type.Optional(
+						Type.Boolean({
+							description: "Allow multiple selections (default: false)",
+						}),
+					),
+					custom: Type.Optional(
+						Type.Boolean({
+							description: "Allow free-text answer (default: true)",
+						}),
+					),
+				}),
+				{
+					minItems: 1,
+					maxItems: MAX_QUESTIONS,
+					description: "1-4 questions",
+				},
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const input = params as unknown as PlanQuestionInput;
+
+			// Validate input
+			for (const q of input.questions) {
+				if (!q.question?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: question text is empty. Each question must have non-empty text.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (!q.header?.trim()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header is empty for question "${q.question.slice(0, 40)}...". Each question needs a short header label.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+				if (q.header.length > MAX_HEADER_LENGTH) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
+							},
+						],
+						details: {},
+						isError: true,
+					};
+				}
+			}
+
+			// Interactive mode: present as TUI overlay
+			if (ctx.hasUI && ctx.ui.custom) {
+				const result = await ctx.ui.custom<string[][] | null>(
+					(tui, theme, _kb, done) => {
+						const prompt = new PlanQuestionPrompt(input.questions, theme, done);
+						return {
+							render: (w: number) => prompt.render(w),
+							invalidate() {
+								prompt.invalidate();
+							},
+							handleInput(data: string) {
+								prompt.handleInput(data);
+								tui.requestRender();
+							},
+						};
+					},
+				);
+
+				if (result === null) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "Questions were dismissed by the user. Proceed with your best judgment based on what you know, or make reasonable assumptions.",
+							},
+						],
+						details: { dismissed: true },
+					};
+				}
+
+				const answersResponse = result
+					.map((answers, i) => {
+						const header = input.questions[i]?.header ?? `Q${i + 1}`;
+						return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
+					})
+					.join("\n");
+				state.metrics.record("tool-response", answersResponse.length);
+				return {
+					content: [
+						{
+							type: "text",
+							text: `User answers received:\n${answersResponse}`,
+						},
+					],
+					details: { answers: result },
+				};
+			}
+
+			// Non-interactive mode (print / JSON): return questions as text
+			const questionText = input.questions
+				.map(
+					(q, i) =>
+						`Question ${i + 1}: ${q.question}\nOptions:\n${q.options.map((o, j) => `  ${j + 1}. ${o.label} — ${o.description}`).join("\n")}${q.custom !== false ? `\n  or type your own answer` : ""}`,
+				)
+				.join("\n\n");
+
+			const nonInteractiveResponse = `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`;
+			state.metrics.record("tool-response", nonInteractiveResponse.length);
+			return {
+				content: [
+					{
+						type: "text",
+						text: nonInteractiveResponse,
+					},
+				],
+				details: { nonInteractive: true },
+			};
+		},
+	});
 }

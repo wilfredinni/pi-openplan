@@ -102,7 +102,11 @@ export class TokenMetricsCollector {
 	}
 
 	/** Get the current session summary */
-	getSummary(): { total: number; sources: Record<string, number>; output: number } {
+	getSummary(): {
+		total: number;
+		sources: Record<string, number>;
+		output: number;
+	} {
 		const total = Array.from(this.sources.values()).reduce((a, b) => a + b, 0);
 		const sources: Record<string, number> = {};
 		for (const [key, val] of this.sources) {
@@ -151,9 +155,7 @@ export class TokenMetricsCollector {
  * Aggregate lifetime token metrics from persisted entries.
  * Deduplicates by sessionId (keeps latest per session).
  */
-export function aggregateLifetimeMetrics(
-	entries: TokenMetricsSnapshot[],
-): {
+export function aggregateLifetimeMetrics(entries: TokenMetricsSnapshot[]): {
 	sessions: number;
 	totalTokens: number;
 	perCategory: Record<string, { tokens: number; count: number }>;
@@ -256,9 +258,7 @@ export function formatTokenReport(summary: TokenMetricsSummary): string {
 	if (summary.lifetime.sessions > 1) {
 		lines.push(sep);
 		lines.push(`Across ${summary.lifetime.sessions} sessions:`);
-		for (const [cat, info] of Object.entries(
-			summary.lifetime.perCategory,
-		)) {
+		for (const [cat, info] of Object.entries(summary.lifetime.perCategory)) {
 			lines.push(
 				`  ${cat}: ${formatTokenCount(info.tokens)} tokens (${info.count}x)`,
 			);

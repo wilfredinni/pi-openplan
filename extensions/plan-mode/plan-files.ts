@@ -229,7 +229,8 @@ export function compressText(content: string): string {
 function compressProse(text: string): string {
 	// Preserve inline code (`...`) and URLs — mark them as protected regions
 	const protectedMarkers: string[] = [];
-	const protectedPattern = /(`[^`]+`)|(https?:\/\/[^\s]+)|(\/[\w./-]+\.[a-z]+)/gi;
+	const protectedPattern =
+		/(`[^`]+`)|(https?:\/\/[^\s]+)|(\/[\w./-]+\.[a-z]+)/gi;
 
 	const marked = text.replace(protectedPattern, (match) => {
 		const idx = protectedMarkers.length;
@@ -243,7 +244,16 @@ function compressProse(text: string): string {
 		const trimmed = line.trim();
 
 		// Preserve markdown headings, list markers, and horizontal rules
-		if (trimmed.startsWith("#") || trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("> ") || trimmed.startsWith("|") || trimmed.startsWith("---") || trimmed.startsWith("___") || trimmed.startsWith("***")) {
+		if (
+			trimmed.startsWith("#") ||
+			trimmed.startsWith("- ") ||
+			trimmed.startsWith("* ") ||
+			trimmed.startsWith("> ") ||
+			trimmed.startsWith("|") ||
+			trimmed.startsWith("---") ||
+			trimmed.startsWith("___") ||
+			trimmed.startsWith("***")
+		) {
 			return line;
 		}
 
@@ -301,11 +311,7 @@ function compressLine(line: string): string {
 	];
 
 	// Articles (optional — more aggressive compression)
-	const articlePatterns = [
-		/\bthe\b\s+/gi,
-		/\ba\b\s+/gi,
-		/\ban\b\s+/gi,
-	];
+	const articlePatterns = [/\bthe\b\s+/gi, /\ba\b\s+/gi, /\ban\b\s+/gi];
 
 	for (const pattern of fillerPatterns) {
 		text = text.replace(pattern, "");
