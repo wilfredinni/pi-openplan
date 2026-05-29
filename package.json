@@ -1,6 +1,6 @@
 {
 	"name": "pi-openplan",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Plan mode extension for pi — read-only exploration with structured planning, plan files, and phased execution tracking",
 	"type": "module",
 	"license": "MIT",
