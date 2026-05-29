@@ -36,8 +36,9 @@ export function registerEvents(
 
 	pi.on("tool_call", async (event) => {
 		if (!state.planModeEnabled || event.toolName !== "bash") return;
+		if (!event.input) return;
 
-		const command = event.input.command as string;
+		const command = String(event.input.command ?? "");
 		if (!isSafeCommand(command)) {
 			return {
 				block: true,
@@ -88,6 +89,7 @@ export function registerEvents(
 
 	pi.on("turn_end", async (event, ctx) => {
 		// Record output tokens from agent responses
+		if (!event.message) return;
 		if (isAssistantMessage(event.message)) {
 			const text = getTextContent(event.message);
 			if (text.length > 0) {
@@ -108,6 +110,7 @@ export function registerEvents(
 	// ── Plan Completion & Next Actions ──────────────────────────────────
 
 	pi.on("agent_end", async (event, ctx) => {
+		if (!event.messages) return;
 		// Check if execution is complete
 		if (state.executionMode && state.todoItems.length > 0) {
 			const allDone = state.todoItems.every((t) => t.completed);
