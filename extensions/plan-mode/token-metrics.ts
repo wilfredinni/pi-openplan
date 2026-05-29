@@ -163,10 +163,11 @@ export function aggregateLifetimeMetrics(entries: TokenMetricsSnapshot[]): {
 	// Deduplicate by sessionId (keep last entry per sessionId per category)
 	const sessionMap = new Map<string, Map<string, TokenMetricsSnapshot>>();
 	for (const entry of entries) {
-		if (!sessionMap.has(entry.sessionId)) {
-			sessionMap.set(entry.sessionId, new Map());
+		let catMap = sessionMap.get(entry.sessionId);
+		if (!catMap) {
+			catMap = new Map();
+			sessionMap.set(entry.sessionId, catMap);
 		}
-		const catMap = sessionMap.get(entry.sessionId)!;
 		catMap.set(entry.category, entry);
 	}
 

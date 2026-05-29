@@ -69,7 +69,7 @@ export function registerCommands(
 		handler: async (args, ctx) => {
 			const filepath = (args?.trim() || "context.md").replace(
 				/^~\//,
-				os.homedir() + "/",
+				`${os.homedir()}/`,
 			);
 			const absolutePath = path.isAbsolute(filepath)
 				? filepath
@@ -110,7 +110,7 @@ export function registerCommands(
 				fs.writeFileSync(absolutePath, compressed, "utf-8");
 
 				const saved = originalSize - compressedSize;
-				const savedTokens = originalTokens - compressedTokens;
+				const _savedTokens = originalTokens - compressedTokens;
 				const pct =
 					originalSize > 0 ? Math.round((saved / originalSize) * 100) : 0;
 

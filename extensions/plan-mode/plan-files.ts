@@ -235,7 +235,7 @@ function compressProse(text: string): string {
 	const marked = text.replace(protectedPattern, (match) => {
 		const idx = protectedMarkers.length;
 		protectedMarkers.push(match);
-		return `\x00PROTECT${idx}\x00`;
+		return `\uE000PROTECT${idx}\uE000`;
 	});
 
 	// Lines that are pure whitespace or markdown headings preserved as-is
@@ -274,7 +274,7 @@ function compressProse(text: string): string {
 
 	// Restore protected markers
 	return result.replace(
-		/\x00PROTECT(\d+)\x00/g,
+		/\uE000PROTECT(\d+)\uE000/g,
 		(_match, idx) => protectedMarkers[parseInt(idx, 10)] ?? _match,
 	);
 }
