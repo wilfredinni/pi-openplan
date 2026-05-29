@@ -55,13 +55,22 @@ function parseFrontmatter(raw: string): {
 		if (kv) frontmatter[kv[1]] = kv[2].replace(/^"|"$/g, "");
 	}
 
+	const s = frontmatter.status;
+	const t = frontmatter.type;
+
 	return {
 		metadata: {
 			title: frontmatter.title,
-			status: frontmatter.status as PlanMetadata["status"],
+			status:
+				s === "draft" || s === "approved" || s === "in_progress" || s === "done"
+					? s
+					: undefined,
 			created: frontmatter.created,
 			updated: frontmatter.updated,
-			type: frontmatter.type as PlanMetadata["type"],
+			type:
+				t === "feature" || t === "fix" || t === "refactor" || t === "chore"
+					? t
+					: undefined,
 		},
 		body: match[2].trim(),
 	};
@@ -143,12 +152,41 @@ export function listPlans(
 	if (!fs.existsSync(planDir)) return [];
 
 	const plans: PlanFile[] = [];
-	const files = fs.readdirSync(planDir, { recursive: true }) as string[];
+	const entries = fs.readdirSync(planDir, { recursive: true });
 
-	for (const file of files) {
+	for (const entry of entries) {
+		const file = typeof entry === "string" ? entry : String(entry);
 		if (!file.endsWith(".md")) continue;
-		const plan = readPlanFile(cwd, file.replace(/\.md$/, ""));
-		if (!plan) continue;
+
+		// Read plan file directly from resolved path — readPlanFile uses
+		// sanitizeFilename which mangles subdirectory paths (e.g. "subdir/plan" → "subdir-plan").
+		const filepath = path.join(planDir, file);
+		if (!fs.existsSync(filepath)) continue;
+
+		const raw = fs.readFileSync(filepath, "utf-8");
+		const { metadata, body } = parseFrontmatter(raw);
+
+		const plan: PlanFile = {
+			filename: file,
+			metadata: {
+				title:
+					metadata.title && metadata.title.length > 0
+						? metadata.title
+						: path.basename(file, ".md"),
+				status:
+					metadata.status && ["draft", "approved", "in_progress", "done"].includes(metadata.status)
+						? metadata.status
+						: "draft",
+				created: metadata.created ?? new Date().toISOString(),
+				type:
+					metadata.type && ["feature", "fix", "refactor", "chore"].includes(metadata.type)
+						? metadata.type
+						: "feature",
+				updated: metadata.updated,
+			},
+			content: body,
+		};
+
 		if (status && plan.metadata.status !== status) continue;
 		plans.push(plan);
 	}
@@ -172,19 +210,6 @@ export function updatePlanStatus(
 	plan.metadata.updated = new Date().toISOString();
 
 	createPlanFile(cwd, filename, plan.content, plan.metadata);
-	return plan;
-}
-
-export function updatePlanContent(
-	cwd: string,
-	filename: string,
-	content: string,
-): PlanFile | null {
-	const plan = readPlanFile(cwd, filename);
-	if (!plan) return null;
-
-	plan.metadata.updated = new Date().toISOString();
-	createPlanFile(cwd, filename, content, plan.metadata);
 	return plan;
 }
 

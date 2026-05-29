@@ -52,11 +52,18 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
 				const filename = slugify(params.filename);
+				const planType =
+					params.type === "feature" ||
+					params.type === "fix" ||
+					params.type === "refactor" ||
+					params.type === "chore"
+						? params.type
+						: "feature";
 				const metadata: PlanMetadata = {
 					title: params.title,
 					status: "draft",
 					created: new Date().toISOString(),
-					type: (params.type as PlanMetadata["type"]) ?? "feature",
+					type: planType,
 				};
 				const result = createPlanFile(
 					ctx.cwd,
@@ -201,10 +208,14 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const plans = listPlans(
-					ctx.cwd,
-					params.status as PlanMetadata["status"] | undefined,
-				);
+				const statusFilter =
+					params.status === "draft" ||
+					params.status === "approved" ||
+					params.status === "in_progress" ||
+					params.status === "done"
+						? params.status
+						: undefined;
+				const plans = listPlans(ctx.cwd, statusFilter);
 				if (plans.length === 0) {
 					return {
 						content: [{ type: "text", text: "No plans found." }],

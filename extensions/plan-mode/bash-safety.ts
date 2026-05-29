@@ -22,9 +22,7 @@ const DESTRUCTIVE_PATTERNS = [
 	/\btruncate\b/i,
 	/\bdd\b/i,
 	/\bshred\b/i,
-	/\bsed\s+.*-i\b/i,
-	/(^|[^<])>(?!>)/,
-	/>>/,
+	/\bsed\s+(.*\s+)?-i(\.[a-zA-Z]+)?\s/i,
 	/\bnpm\s+(install|uninstall|update|ci|link|publish)/i,
 	/\byarn\s+(add|remove|install|publish)/i,
 	/\bpip\s+(install|uninstall)/i,
@@ -41,6 +39,17 @@ const DESTRUCTIVE_PATTERNS = [
 	/\bsystemctl\s+(start|stop|restart|enable|disable)/i,
 	/\bservice\s+\S+\s+(start|stop|restart)/i,
 	/\b(vim?|nano|emacs|code|subl)\b/i,
+
+	// Pipe-to-interpreter (dangerous: curl ... | bash)
+	/\|\s*(ba)?sh\b/i,
+	/\|\s*python\d?\b/i,
+	/\|\s*perl\b/i,
+	/\|\s*ruby\b/i,
+	/\|\s*node\b/i,
+
+	// Curl/wget writing to absolute paths
+	/\bcurl\s+.*-o\s+\//i,
+	/\bwget\s+.*-O\s+\//i,
 ];
 
 const SAFE_PATTERNS = [
@@ -95,6 +104,7 @@ const SAFE_PATTERNS = [
 	/^\s*bat\b/,
 	/^\s*eza\b/,
 	/^\s*make\s+(test|test-cov|shell|logs)/i,
+	/^\s*cd\b/i,
 ];
 
 // ── Guard ────────────────────────────────────────────────────────────────
