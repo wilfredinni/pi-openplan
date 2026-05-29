@@ -174,12 +174,14 @@ export function listPlans(
 						? metadata.title
 						: path.basename(file, ".md"),
 				status:
-					metadata.status && ["draft", "approved", "in_progress", "done"].includes(metadata.status)
+					metadata.status &&
+					["draft", "approved", "in_progress", "done"].includes(metadata.status)
 						? metadata.status
 						: "draft",
 				created: metadata.created ?? new Date().toISOString(),
 				type:
-					metadata.type && ["feature", "fix", "refactor", "chore"].includes(metadata.type)
+					metadata.type &&
+					["feature", "fix", "refactor", "chore"].includes(metadata.type)
 						? metadata.type
 						: "feature",
 				updated: metadata.updated,
