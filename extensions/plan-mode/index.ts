@@ -28,6 +28,7 @@ import type {
 import {
 	getMarkdownTheme,
 	parseFrontmatter,
+	type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -43,6 +44,7 @@ import {
 	EXECUTION_MODE_PROMPT,
 	PLAN_AMEND_SYSTEM_PROMPT,
 	PLAN_MODE_SYSTEM_PROMPT,
+	PLAN_RESUME_SYSTEM_PROMPT,
 	PLAN_REVISE_SYSTEM_PROMPT,
 } from "./prompts.ts";
 import {
@@ -183,10 +185,14 @@ function isSafeCommand(command: string): boolean {
 
 // ── Todo / Plan Step Tracking ──────────────────────────────────────────
 
+type TodoStatus = "pending" | "in_progress" | "done" | "skipped" | "failed";
+
 interface TodoItem {
 	step: number;
 	text: string;
-	completed: boolean;
+	status: TodoStatus;
+	startedAt?: string;
+	completedAt?: string;
 }
 
 function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
@@ -221,7 +227,7 @@ function extractTodosFromPlan(message: string): TodoItem[] {
 				items.push({
 					step: items.length + 1,
 					text: text.length > 60 ? `${text.slice(0, 57)}...` : text,
-					completed: false,
+					status: "pending",
 				});
 			}
 		}
@@ -238,7 +244,7 @@ function extractTodosFromPlan(message: string): TodoItem[] {
 			items.push({
 				step: num,
 				text: name.length > 60 ? `${name.slice(0, 57)}...` : name,
-				completed: false,
+				status: "pending",
 			});
 		}
 	}
@@ -256,7 +262,7 @@ function extractTodosFromPlan(message: string): TodoItem[] {
 			for (const match of section.matchAll(numPattern)) {
 				const text = match[2].trim();
 				if (text.length > 3) {
-					items.push({ step: items.length + 1, text, completed: false });
+					items.push({ step: items.length + 1, text, status: "pending" });
 				}
 			}
 		}
@@ -265,6 +271,31 @@ function extractTodosFromPlan(message: string): TodoItem[] {
 	return items;
 }
 
+/**
+ * Extract status tags from text: [DONE:n], [SKIP:n], [FAIL:n], [START:n]
+ */
+function extractStatusSteps(text: string): Map<number, TodoStatus> {
+	const steps = new Map<number, TodoStatus>();
+	const patterns: [RegExp, TodoStatus][] = [
+		[/\[DONE:(\d+)\]/gi, "done"],
+		[/\[SKIP:(\d+)\]/gi, "skipped"],
+		[/\[FAIL:(\d+)\]/gi, "failed"],
+		[/\[START:(\d+)\]/gi, "in_progress"],
+	];
+	for (const [regex, status] of patterns) {
+		for (const match of text.matchAll(regex)) {
+			const step = Number(match[1]);
+			if (Number.isFinite(step)) {
+				steps.set(step, status);
+			}
+		}
+	}
+	return steps;
+}
+
+/**
+ * Legacy support: extract [DONE:n] tags only.
+ */
 function extractDoneSteps(text: string): number[] {
 	const steps: number[] = [];
 	for (const match of text.matchAll(/\[DONE:(\d+)\]/gi)) {
@@ -278,9 +309,33 @@ function markCompletedSteps(text: string, items: TodoItem[]): number {
 	const done = extractDoneSteps(text);
 	for (const step of done) {
 		const item = items.find((t) => t.step === step);
-		if (item) item.completed = true;
+		if (item) {
+			item.status = "done";
+			item.completedAt = new Date().toISOString();
+		}
 	}
 	return done.length;
+}
+
+/**
+ * Update todo item statuses from all status tags in the text.
+ */
+function updateStepStatus(text: string, items: TodoItem[]): number {
+	const statusMap = extractStatusSteps(text);
+	let changed = 0;
+	for (const [step, status] of statusMap) {
+		const item = items.find((t) => t.step === step);
+		if (item && item.status !== status) {
+			item.status = status;
+			if (status === "done" || status === "failed" || status === "skipped") {
+				item.completedAt = new Date().toISOString();
+			} else if (status === "in_progress") {
+				item.startedAt = item.startedAt ?? new Date().toISOString();
+			}
+			changed++;
+		}
+	}
+	return changed;
 }
 
 // ── Extension ──────────────────────────────────────────────────────────
@@ -314,6 +369,44 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	// ── UI Helpers ──────────────────────────────────────────────────────
 
+	function getStatusIcon(
+		theme: {
+			fg: (color: ThemeColor, text: string) => string;
+			strikethrough: (text: string) => string;
+		},
+		status: TodoStatus,
+		text: string,
+	): string {
+		switch (status) {
+			case "done":
+				return (
+					theme.fg("success", "✓ ") +
+					theme.fg("muted", theme.strikethrough(text))
+				);
+			case "in_progress":
+				return theme.fg("accent", "⟳ ") + theme.fg("accent", text);
+			case "failed":
+				return theme.fg("warning", "✗ ") + theme.fg("warning", text);
+			case "skipped":
+				return theme.fg("muted", "⏭ ") + theme.fg("muted", text);
+			default:
+				return theme.fg("muted", "○ ") + theme.fg("accent", text);
+		}
+	}
+
+	function renderProgressBar(
+		theme: {
+			fg: (color: ThemeColor, text: string) => string;
+		},
+		completed: number,
+		total: number,
+	): string {
+		const width = 10;
+		const done = Math.floor((completed / Math.max(total, 1)) * width);
+		const bar = "█".repeat(done) + "░".repeat(Math.max(0, width - done));
+		return theme.fg("accent", `${bar} ${completed}/${total}`);
+	}
+
 	function updateUI(ctx: ExtensionContext): void {
 		// Footer status
 		if (planAmendMode) {
@@ -321,10 +414,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		} else if (planReviseMode) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "✎ revise"));
 		} else if (executionMode && todoItems.length > 0) {
-			const completed = todoItems.filter((t) => t.completed).length;
+			const doneCount = todoItems.filter((t) => t.status === "done").length;
 			ctx.ui.setStatus(
 				"plan-mode",
-				ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`),
+				ctx.ui.theme.fg("accent", `📋 ${doneCount}/${todoItems.length}`),
 			);
 		} else if (planModeEnabled) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
@@ -334,17 +427,18 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		// Widget showing plan progress
 		if (executionMode && todoItems.length > 0) {
-			const lines = todoItems.map((item) => {
-				if (item.completed) {
-					return (
-						ctx.ui.theme.fg("success", "✓ ") +
-						ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
-					);
-				}
-				return (
-					ctx.ui.theme.fg("muted", "○ ") + ctx.ui.theme.fg("accent", item.text)
-				);
-			});
+			const doneCount = todoItems.filter((t) => t.status === "done").length;
+			const progressBar = renderProgressBar(
+				ctx.ui.theme,
+				doneCount,
+				todoItems.length,
+			);
+			const lines = [
+				ctx.ui.theme.fg("muted", progressBar),
+				...todoItems.map((item) =>
+					getStatusIcon(ctx.ui.theme, item.status, item.text),
+				),
+			];
 			ctx.ui.setWidget("plan-todos", lines);
 		} else if (planModeEnabled && todoItems.length > 0) {
 			const lines = todoItems.map(
@@ -419,6 +513,125 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => togglePlanMode(ctx),
 	});
 
+	pi.registerCommand("plan_resume", {
+		description:
+			"Resume execution of an incomplete plan. If a plan name is provided, load it and resume from the first incomplete phase.",
+		handler: async (args, ctx) => {
+			const planName = args?.trim();
+
+			// Exit plan mode if active
+			if (planModeEnabled) {
+				planModeEnabled = false;
+				executionMode = true;
+				pi.setActiveTools(NORMAL_MODE_TOOLS);
+			} else if (!executionMode) {
+				executionMode = true;
+			}
+
+			if (planName) {
+				// Load plan and re-extract todos
+				const plan = readPlanFile(ctx.cwd, planName);
+				if (plan) {
+					todoItems = extractTodosFromPlan(plan.content);
+					updatePlanStatus(ctx.cwd, planName, "in_progress");
+				}
+			}
+
+			if (todoItems.length === 0) {
+				ctx.ui.notify(
+					"No plan loaded. Use /execute_plan <name> to start a new execution.",
+					"warning",
+				);
+				return;
+			}
+
+			const statusLines = todoItems
+				.map((t) => {
+					const icon =
+						t.status === "done"
+							? "[DONE]"
+							: t.status === "skipped"
+								? "[SKIP]"
+								: t.status === "in_progress"
+									? "[START]"
+									: "[PENDING]";
+					return `${icon} Phase ${t.step}: ${t.text}`;
+				})
+				.join("\n");
+
+			ctx.ui.notify(
+				`Resuming execution from phase ${
+					todoItems.find((t) => t.status !== "done")?.step ?? 1
+				}.`,
+				"info",
+			);
+
+			updateUI(ctx);
+			persistState();
+
+			pi.sendUserMessage(
+				`${PLAN_RESUME_SYSTEM_PROMPT}\n\n## Current Plan Status\n\n${statusLines}\n\nResume execution. Use [DONE:n], [START:n], [SKIP:n], or [FAIL:n] tags.`,
+			);
+		},
+	});
+
+	pi.registerCommand("plan_skip", {
+		description: "Skip a phase by number. Usage: /plan_skip <phase-number>",
+		handler: async (args, ctx) => {
+			const phaseNum = parseInt(args?.trim() ?? "", 10);
+			if (Number.isNaN(phaseNum) || phaseNum < 1) {
+				ctx.ui.notify(
+					"Usage: /plan_skip <phase-number> — provide the phase number to skip.",
+					"warning",
+				);
+				return;
+			}
+
+			const item = todoItems.find((t) => t.step === phaseNum);
+			if (!item) {
+				ctx.ui.notify(`Phase ${phaseNum} not found.`, "warning");
+				return;
+			}
+
+			item.status = "skipped";
+			item.completedAt = new Date().toISOString();
+			ctx.ui.notify(`Skipped Phase ${phaseNum}: ${item.text}`, "info");
+			updateUI(ctx);
+			persistState();
+		},
+	});
+
+	pi.registerCommand("plan_retry", {
+		description:
+			"Retry a failed or skipped phase by resetting it. Usage: /plan_retry <phase-number>",
+		handler: async (args, ctx) => {
+			const phaseNum = parseInt(args?.trim() ?? "", 10);
+			if (Number.isNaN(phaseNum) || phaseNum < 1) {
+				ctx.ui.notify(
+					"Usage: /plan_retry <phase-number> — provide the phase number to retry.",
+					"warning",
+				);
+				return;
+			}
+
+			const item = todoItems.find((t) => t.step === phaseNum);
+			if (!item) {
+				ctx.ui.notify(`Phase ${phaseNum} not found.`, "warning");
+				return;
+			}
+
+			item.status = "pending";
+			item.completedAt = undefined;
+			item.startedAt = undefined;
+			ctx.ui.notify(
+				`Reset Phase ${phaseNum}: ${item.text} to pending.`,
+				"info",
+			);
+			updateUI(ctx);
+			persistState();
+		},
+	});
+
 	pi.registerCommand("plan_revise", {
 		description:
 			"Load an existing plan and re-enter plan mode to revise it. Provide a plan name as argument.",
@@ -490,8 +703,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			planAmendMode = true;
 
 			// Build plan content with completion status
-			const remaining = todoItems.filter((t) => !t.completed);
-			const doneItems = todoItems.filter((t) => t.completed);
+			const remaining = todoItems.filter((t) => t.status !== "done");
+			const doneItems = todoItems.filter((t) => t.status === "done");
 			const statusLines = [
 				"## Completion Status",
 				"",
@@ -1019,8 +1232,20 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 
 		if (executionMode && todoItems.length > 0) {
-			const remaining = todoItems.filter((t) => !t.completed);
-			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
+			const remaining = todoItems.filter((t) => t.status !== "done");
+			const todoList = remaining
+				.map((t) => {
+					const statusIcon =
+						t.status === "in_progress"
+							? "⟳"
+							: t.status === "skipped"
+								? "⏭"
+								: t.status === "failed"
+									? "✗"
+									: "○";
+					return `${statusIcon} ${t.step}. ${t.text}`;
+				})
+				.join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
@@ -1031,14 +1256,23 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// ── Event: Track [DONE:n] Markers ───────────────────────────────────
+	// ── Event: Track Status Markers ─────────────────────────────────────
 
 	pi.on("turn_end", async (event, ctx) => {
 		if (!executionMode || todoItems.length === 0) return;
 		if (!isAssistantMessage(event.message)) return;
 
 		const text = getTextContent(event.message);
+		let changed = false;
+		// Support new status tags (DONE, SKIP, FAIL, START)
+		if (updateStepStatus(text, todoItems) > 0) {
+			changed = true;
+		}
+		// Legacy [DONE:n] support
 		if (markCompletedSteps(text, todoItems) > 0) {
+			changed = true;
+		}
+		if (changed) {
 			updateUI(ctx);
 		}
 		persistState();
@@ -1059,7 +1293,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		// Check if execution is complete
 		if (executionMode && todoItems.length > 0) {
-			const allDone = todoItems.every((t) => t.completed);
+			const allDone = todoItems.every((t) => t.status === "done");
 			if (allDone) {
 				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
 				pi.sendMessage(
@@ -1170,7 +1404,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			pendingPlanTitle = planModeEntry.data.pendingPlanTitle ?? "";
 		}
 
-		// On resume, re-scan messages for [DONE:n] markers
+		// On resume, re-scan messages for status markers
 		const isResume = planModeEntry !== undefined;
 		if (isResume && executionMode && todoItems.length > 0) {
 			let executeIndex = -1;
@@ -1194,6 +1428,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				}
 			}
 			const allText = messages.map(getTextContent).join("\n");
+			updateStepStatus(allText, todoItems);
+			// Legacy [DONE:n] support
 			markCompletedSteps(allText, todoItems);
 		}
 

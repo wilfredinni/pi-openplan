@@ -207,6 +207,16 @@ Preserve any completed phases. Focus on improving the remaining phases.
 Increment the plan version to reflect this revision.
 `;
 
+export const PLAN_RESUME_SYSTEM_PROMPT = `[RESUMING PLAN EXECUTION]
+
+Execution was interrupted. You are resuming from where you left off.
+The current plan with completion status is loaded below.
+
+Continue with the first incomplete phase. Report what was already completed
+and what remains. Mark completed steps with [DONE:n] and current phase with
+[START:n]. If a phase was skipped, mark it with [SKIP:n].
+`;
+
 export const PLAN_AMEND_SYSTEM_PROMPT = `[PLAN AMENDMENT — Pausing execution]
 
 Execution is paused. The current plan is loaded with completion status below.
