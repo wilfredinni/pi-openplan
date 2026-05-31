@@ -11,14 +11,14 @@ pi-openplan/
 ├── extensions/plan-mode/
 │   ├── index.ts            — Extension entry point, wires all modules
 │   ├── state.ts            — Shared state, types, tool sets, todo extraction
-│   ├── commands.ts         — Command handlers: /plan, /plans, /execute_plan, /tokens, /compress-context
+│   ├── commands.ts         — Command handlers: /plan, /plans, /execute_plan
 │   ├── events.ts           — Event handlers: bash safety, prompts, DONE tracking, session restore
 │   ├── tools.ts            — Tool registrations: plan_write, plan_read, plan_list
 │   ├── question-prompt.ts  — Interactive plan_question TUI overlay
 │   ├── prompts.ts          — System prompts, conciseness directive, plan template
 │   ├── token-metrics.ts    — Token estimation, collection, lifetime aggregation
 │   ├── bash-safety.ts      — Dual-gate command safety (destructive + safe patterns)
-│   └── plan-files.ts       — CRUD for .pi/plans/, frontmatter parsing, text compression
+│   └── plan-files.ts       — CRUD for .pi/plans/, frontmatter parsing
 ├── .pi/plans/              — Saved plan files (gitignored)
 ├── .github/workflows/      — CI (type-check + lint) and Release (release-please)
 ├── package.json            — ESM, peer deps on pi packages + typebox
