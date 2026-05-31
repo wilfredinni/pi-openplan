@@ -80,7 +80,9 @@ ${CONCISENESS_DIRECTIVE}`;
 
 export const EXECUTION_MODE_PROMPT = `[Executing Plan]
 Follow phases in order. Tag each with [DONE:n]. Pause at ⏸️ markers.
-When done, verify against plan criteria.`;
+When done, verify against plan criteria.
+
+${CONCISENESS_DIRECTIVE}`;
 
 // ── Plan Template ────────────────────────────────────────────────────────
 // Kept as reference for the agent; no longer embedded in the system prompt.

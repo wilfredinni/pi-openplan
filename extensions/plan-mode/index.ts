@@ -48,10 +48,16 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return md;
 	});
 
-	// ── CLI Flag ──────────────────────────────────────────────────────
+	// ── CLI Flags ─────────────────────────────────────────────────────
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("plan-token-verify", {
+		description: "Show per-turn token overhead in the plan mode footer (debug)",
 		type: "boolean",
 		default: false,
 	});
@@ -62,13 +68,21 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		// Footer status
 		if (state.executionMode && state.todoItems.length > 0) {
 			const completed = state.todoItems.filter((t) => t.completed).length;
+			const execOverhead =
+				state.tokenVerifyEnabled && state.lastTurnOverhead > 0
+					? ` · +${state.lastTurnOverhead}T`
+					: "";
 			ctx.ui.setStatus(
 				"plan-mode",
-				ctx.ui.theme.fg("accent", `📋 ${completed}/${state.todoItems.length}`),
+				ctx.ui.theme.fg(
+					"accent",
+					`📋 ${completed}/${state.todoItems.length}${execOverhead}`,
+				),
 			);
 		} else if (state.planModeEnabled) {
+			const showOverhead = state.showTokenOverhead || state.tokenVerifyEnabled;
 			const overhead =
-				state.showTokenOverhead && state.lastTurnOverhead > 0
+				showOverhead && state.lastTurnOverhead > 0
 					? ` · +${state.lastTurnOverhead}T`
 					: "";
 			ctx.ui.setStatus(
@@ -112,6 +126,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			todos: state.todoItems,
 			executing: state.executionMode,
 			turnCount: state.planModeTurnCount,
+			tokenVerify: state.tokenVerifyEnabled,
 		});
 		// Persist token metrics
 		const snapshots = state.metrics.toSnapshot();

@@ -196,9 +196,12 @@ export function registerEvents(
 	// ── Restore State on Session Start ──────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Check --plan flag
+		// Check --plan and --plan-token-verify flags
 		if (pi.getFlag("plan") === true && !state.planModeEnabled) {
 			state.planModeEnabled = true;
+		}
+		if (pi.getFlag("plan-token-verify") === true) {
+			state.tokenVerifyEnabled = true;
 		}
 
 		// Restore persisted state
@@ -215,6 +218,7 @@ export function registerEvents(
 						todos?: TodoItem[];
 						executing?: boolean;
 						turnCount?: number;
+						tokenVerify?: boolean;
 					};
 			  }
 			| undefined;
@@ -225,6 +229,8 @@ export function registerEvents(
 			state.todoItems = planModeEntry.data.todos ?? state.todoItems;
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
 			state.planModeTurnCount = planModeEntry.data.turnCount ?? 0;
+			state.tokenVerifyEnabled =
+				planModeEntry.data.tokenVerify ?? state.tokenVerifyEnabled;
 		}
 
 		// Restore token metrics from persisted entries

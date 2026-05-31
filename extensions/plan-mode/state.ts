@@ -57,6 +57,7 @@ export interface PlanModeState {
 	planModeTurnCount: number;
 	showTokenOverhead: boolean;
 	lastTurnOverhead: number;
+	tokenVerifyEnabled: boolean;
 	metrics: TokenMetricsCollector;
 }
 
@@ -80,6 +81,7 @@ export function createInitialState(): PlanModeState {
 		planModeTurnCount: 0,
 		showTokenOverhead: false,
 		lastTurnOverhead: 0,
+		tokenVerifyEnabled: false,
 		metrics: new TokenMetricsCollector(),
 	};
 }
