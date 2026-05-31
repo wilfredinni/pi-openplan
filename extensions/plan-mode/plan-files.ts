@@ -32,7 +32,7 @@ function ensurePlansDir(cwd: string): string {
 	return dir;
 }
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
 	return name
 		.replace(/\.md$/i, "")
 		.replace(/[^a-zA-Z0-9_-]/g, "-")
@@ -42,7 +42,7 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 120);
 }
 
-function parseFrontmatter(raw: string): {
+export function parseFrontmatter(raw: string): {
 	metadata: Partial<PlanMetadata>;
 	body: string;
 } {

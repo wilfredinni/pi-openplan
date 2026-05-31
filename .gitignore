@@ -5,3 +5,4 @@ dist/
 *.log
 research.md
 meta-prompt.md
+coverage/
