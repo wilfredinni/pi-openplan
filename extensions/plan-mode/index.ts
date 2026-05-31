@@ -65,6 +65,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── UI Helpers ────────────────────────────────────────────────────
 
 	function updateUI(ctx: Parameters<PlanModeCallbacks["updateUI"]>[0]): void {
+		if (!ctx?.hasUI) return;
+
 		// Footer status
 		if (state.executionMode && state.todoItems.length > 0) {
 			const completed = state.todoItems.filter((t) => t.completed).length;
@@ -127,6 +129,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			executing: state.executionMode,
 			turnCount: state.planModeTurnCount,
 			tokenVerify: state.tokenVerifyEnabled,
+			sessionId: state.metrics.sessionId,
 		});
 		// Persist token metrics
 		const snapshots = state.metrics.toSnapshot();
@@ -142,10 +145,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		state.executionMode = false;
 		state.planModeTurnCount = 0;
 		pi.setActiveTools(PLAN_MODE_TOOLS);
-		ctx.ui.notify(
-			`Plan mode enabled — read-only. Tools: read, grep, find, ls, bash (safe), subagent, research, plan_write`,
-			"info",
-		);
+		if (ctx?.hasUI) {
+			ctx.ui.notify(
+				`Plan mode enabled — read-only. Tools: read, grep, find, ls, bash (safe), subagent, research, plan_write`,
+				"info",
+			);
+		}
 		updateUI(ctx);
 		persistState();
 	}
@@ -157,7 +162,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		state.executionMode = false;
 		state.todoItems = [];
 		pi.setActiveTools(NORMAL_MODE_TOOLS);
-		ctx.ui.notify("Plan mode disabled — full access restored.", "info");
+		if (ctx?.hasUI) {
+			ctx.ui.notify("Plan mode disabled — full access restored.", "info");
+		}
 		updateUI(ctx);
 		persistState();
 	}

@@ -111,6 +111,7 @@ export function createPlanFile(
 export function readPlanFile(cwd: string, filename: string): PlanFile | null {
 	const planDir = path.join(cwd, PLANS_DIR);
 	const safeName = sanitizeFilename(filename);
+	if (safeName.length === 0) return null;
 
 	// Try exact match first
 	let filepath = path.join(planDir, `${safeName}.md`);

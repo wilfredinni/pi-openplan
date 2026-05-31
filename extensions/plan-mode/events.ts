@@ -159,7 +159,7 @@ export function registerEvents(
 			return;
 		}
 
-		if (!state.planModeEnabled || !ctx.hasUI) return;
+		if (!state.planModeEnabled) return;
 
 		// Extract plan steps from the last assistant message
 		const lastAssistant = [...event.messages]
@@ -170,13 +170,13 @@ export function registerEvents(
 			const extracted = extractTodosFromPlan(text);
 			if (extracted.length > 0) {
 				state.todoItems = extracted;
-				callbacks.updateUI(ctx);
+				if (ctx.hasUI) callbacks.updateUI(ctx);
 				callbacks.persistState();
 			}
 		}
 
 		// Show plan steps if extracted
-		if (state.todoItems.length > 0) {
+		if (state.todoItems.length > 0 && ctx.hasUI) {
 			const todoListText = state.todoItems
 				.map((t, i) => `${i + 1}. ○ ${t.text}`)
 				.join("\n");
@@ -219,6 +219,7 @@ export function registerEvents(
 						executing?: boolean;
 						turnCount?: number;
 						tokenVerify?: boolean;
+						sessionId?: string;
 					};
 			  }
 			| undefined;
@@ -231,6 +232,11 @@ export function registerEvents(
 			state.planModeTurnCount = planModeEntry.data.turnCount ?? 0;
 			state.tokenVerifyEnabled =
 				planModeEntry.data.tokenVerify ?? state.tokenVerifyEnabled;
+
+			// Restore sessionId so metrics survive pi restarts
+			if (planModeEntry.data.sessionId) {
+				state.metrics.setSessionId(planModeEntry.data.sessionId);
+			}
 		}
 
 		// Restore token metrics from persisted entries
@@ -297,7 +303,11 @@ export function registerEvents(
 				};
 				if (
 					msg.customType === "plan-mode-context" ||
-					msg.customType === "plan-execution-context"
+					msg.customType === "plan-execution-context" ||
+					msg.customType === "plan-content" ||
+					msg.customType === "plan-todo-list" ||
+					msg.customType === "plan-pause" ||
+					msg.customType === "plan-complete"
 				) {
 					return false;
 				}

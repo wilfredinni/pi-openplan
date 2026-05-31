@@ -195,9 +195,17 @@ export function registerCommands(
 			if (state.planModeEnabled) {
 				state.planModeEnabled = false;
 				state.executionMode = true;
+				state.todoItems = [];
 				pi.setActiveTools(NORMAL_MODE_TOOLS);
+			} else if (state.executionMode) {
+				// Already in execution mode — reload plan
+				state.todoItems = [];
 			} else {
-				state.executionMode = true;
+				ctx.ui.notify(
+					"Cannot execute plan from normal mode. Use /plan first to enter plan mode, then /execute_plan.",
+					"warning",
+				);
+				return;
 			}
 
 			state.todoItems = [];

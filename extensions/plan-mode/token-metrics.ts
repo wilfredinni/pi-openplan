@@ -76,10 +76,15 @@ const CATEGORIES = {
  * Collects and persists token metrics for the current session.
  */
 export class TokenMetricsCollector {
-	private sessionId: string;
+	readonly sessionId: string;
 	private sources: Map<string, number> = new Map();
 	private outputTokens = 0;
 	private entries: TokenMetricsSnapshot[] = [];
+
+	/** Override sessionId for state restoration (survives pi restarts) */
+	setSessionId(id: string): void {
+		(this as { sessionId: string }).sessionId = id;
+	}
 
 	constructor(sessionId?: string) {
 		this.sessionId =

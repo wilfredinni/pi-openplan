@@ -59,6 +59,12 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 					params.type === "chore"
 						? params.type
 						: "feature";
+				if (params.type && params.type !== planType) {
+					ctx.ui.notify(
+						`Invalid plan type "${params.type}", defaulting to "feature". Accepted: feature, fix, refactor, chore.`,
+						"warning",
+					);
+				}
 				const metadata: PlanMetadata = {
 					title: params.title,
 					status: "draft",
