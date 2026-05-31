@@ -126,6 +126,30 @@ describe("readPlanFile", () => {
 		expect(plan?.content).toBe("Just content");
 		expect(plan?.metadata.status).toBe("draft");
 	});
+
+	it("parses frontmatter with hyphenated YAML keys", () => {
+		memfs.mkdirSync(PLANS_DIR, { recursive: true });
+		memfs.writeFileSync(
+			`${PLANS_DIR}/hyphen-key.md`,
+			[
+				"---",
+				'title: "Hyphen Key Test"',
+				"status: draft",
+				'created: "2025-01-01"',
+				"type: feature",
+				"custom-key: works-with-hyphens",
+				"---",
+				"",
+				"Body content",
+			].join("\n"),
+		);
+
+		const plan = readPlanFile(CWD, "hyphen-key");
+		expect(plan).not.toBeNull();
+		expect(plan?.metadata.title).toBe("Hyphen Key Test");
+		expect(plan?.metadata.status).toBe("draft");
+		expect(plan?.content).toBe("Body content");
+	});
 });
 
 describe("listPlans", () => {

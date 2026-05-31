@@ -1,9 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { slugify } from "../extensions/plan-mode/plan-files.ts";
+import {
+	sanitizeFilename,
+	slugify,
+} from "../extensions/plan-mode/plan-files.ts";
 
-// sanitizeFilename and parseFrontmatter are not exported from plan-files.ts
-// They are module-private. We test slugify which is exported, and test
-// behavior of createPlanFile/readPlanFile indirectly in the fs tests.
+describe("sanitizeFilename", () => {
+	it("strips .md extension", () => {
+		expect(sanitizeFilename("my-plan.md")).toBe("my-plan");
+	});
+
+	it("replaces special characters with hyphens", () => {
+		expect(sanitizeFilename("my weird plan!!!")).toBe("my-weird-plan");
+	});
+
+	it("collapses consecutive hyphens", () => {
+		expect(sanitizeFilename("a   b")).toBe("a-b");
+	});
+
+	it("strips leading/trailing hyphens", () => {
+		expect(sanitizeFilename("-hello-")).toBe("hello");
+	});
+
+	it("flattens subdirectory paths by default", () => {
+		expect(sanitizeFilename("pending/my-plan")).toBe("pending-my-plan");
+	});
+
+	it("preserves subdirectory paths when preservePath=true", () => {
+		expect(sanitizeFilename("pending/my-plan", true)).toBe("pending/my-plan");
+	});
+
+	it("preserves deep subdirectory paths", () => {
+		expect(sanitizeFilename("archived/2025/rate-limiting", true)).toBe(
+			"archived/2025/rate-limiting",
+		);
+	});
+
+	it("sanitizes each path component when preservePath", () => {
+		expect(sanitizeFilename("PENDING/My Plan!!!/setup", true)).toBe(
+			"pending/my-plan/setup",
+		);
+	});
+
+	it("truncates long names to 120 chars", () => {
+		const long = "a".repeat(150);
+		expect(sanitizeFilename(long).length).toBeLessThanOrEqual(120);
+	});
+});
 
 describe("slugify", () => {
 	it("prefixes with date", () => {

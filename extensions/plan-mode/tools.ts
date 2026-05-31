@@ -6,7 +6,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter as stripFrontmatter } from "@earendil-works/pi-coding-agent";
+// Note: plan-files.ts has its own parseFrontmatter for reading metadata.
+// Both return { body: string } for the content portion, so destructuring
+// the SDK version's return value is compatible. Aliased as stripFrontmatter
+// to avoid confusion with the local metadata parser.
 import { Type } from "typebox";
 import {
 	createPlanFile,
@@ -67,7 +71,9 @@ export function registerTools(pi: ExtensionAPI): void {
 					params.content,
 					metadata,
 				);
-				const { body: cleanBody } = parseFrontmatter(params.content);
+				const { body: cleanBody } = stripFrontmatter(params.content) as {
+					body: string;
+				};
 				const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
 				const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
 				const statusIcon =

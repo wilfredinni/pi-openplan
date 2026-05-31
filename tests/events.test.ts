@@ -96,6 +96,10 @@ describe("event: before_agent_start", () => {
 		expect(result.message.display).toBe(false);
 		expect(result.message.content).toContain("[Plan Mode]");
 		expect(result.message.content).toContain("READ-ONLY");
+
+		// Verify token metrics were recorded
+		expect(state.tokenMetrics.turns).toBe(1);
+		expect(state.tokenMetrics.sessionInputTokens).toBeGreaterThan(0);
 	});
 
 	it("injects brief prompt after first turn in plan mode", async () => {
@@ -157,6 +161,8 @@ describe("event: before_agent_start", () => {
 		const result = await handler();
 
 		expect(result).toBeUndefined();
+		// No tokens recorded when nothing injected
+		expect(state.tokenMetrics.turns).toBe(0);
 	});
 });
 
@@ -181,6 +187,9 @@ describe("event: turn_end", () => {
 		expect(state.todoItems[0].completed).toBe(true);
 		expect(callbacks.updateUI).toHaveBeenCalled();
 		expect(callbacks.persistState).toHaveBeenCalled();
+
+		// Verify output tokens were recorded
+		expect(state.tokenMetrics.sessionOutputTokens).toBeGreaterThan(0);
 	});
 
 	it("does nothing when not in execution mode", async () => {
@@ -390,5 +399,84 @@ describe("event: context", () => {
 		// Should return undefined (no filtering) since plan mode is active
 		// Actually, looking at the code: if planModeEnabled OR executionMode is true, it returns undefined
 		expect(result).toBeUndefined();
+	});
+
+	it("filters messages with nested data.customType (raw entry format)", async () => {
+		const pi = createMockPi();
+		const state = createInitialState();
+		state.planModeEnabled = false;
+		state.executionMode = false;
+		const callbacks = createCallbacks();
+		registerEvents(pi as unknown as ExtensionAPI, state, callbacks);
+
+		const handler = findHandler(pi, "context");
+		const result = await handler({
+			messages: [
+				{
+					role: "user",
+					data: { customType: "plan-mode-context" },
+					content: "Should filter (nested)",
+					type: "message",
+				},
+				{ role: "user", content: "Keep me too" },
+			],
+		});
+
+		expect(result).toBeDefined();
+		expect(result.messages).toHaveLength(1);
+		expect(result.messages[0].content).toBe("Keep me too");
+	});
+
+	it("filters messages with [Plan Mode ACTIVE] string content", async () => {
+		const pi = createMockPi();
+		const state = createInitialState();
+		state.planModeEnabled = false;
+		state.executionMode = false;
+		const callbacks = createCallbacks();
+		registerEvents(pi as unknown as ExtensionAPI, state, callbacks);
+
+		const handler = findHandler(pi, "context");
+		const result = await handler({
+			messages: [
+				{
+					role: "user",
+					content: "[Plan Mode ACTIVE] some context",
+				},
+				{ role: "user", content: "Keep this" },
+			],
+		});
+
+		expect(result).toBeDefined();
+		expect(result.messages).toHaveLength(1);
+		expect(result.messages[0].content).toBe("Keep this");
+	});
+
+	it("filters [Plan Mode ACTIVE] with array content", async () => {
+		const pi = createMockPi();
+		const state = createInitialState();
+		state.planModeEnabled = false;
+		state.executionMode = false;
+		const callbacks = createCallbacks();
+		registerEvents(pi as unknown as ExtensionAPI, state, callbacks);
+
+		const handler = findHandler(pi, "context");
+		const result = await handler({
+			messages: [
+				{
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: "[Plan Mode ACTIVE] some context",
+						},
+					],
+				},
+				{ role: "user", content: "Keep this too" },
+			],
+		});
+
+		expect(result).toBeDefined();
+		expect(result.messages).toHaveLength(1);
+		expect(result.messages[0].content).toBe("Keep this too");
 	});
 });

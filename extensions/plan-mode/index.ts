@@ -59,7 +59,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── UI Helpers ────────────────────────────────────────────────────
 
 	function updateUI(ctx: Parameters<PlanModeCallbacks["updateUI"]>[0]): void {
-		// Footer status
+		// Footer status — include token savings info when available
+		const metrics = state.tokenMetrics;
+		const tokensActive = metrics.turns > 0;
 		if (state.executionMode && state.todoItems.length > 0) {
 			const completed = state.todoItems.filter((t) => t.completed).length;
 			ctx.ui.setStatus(
@@ -67,7 +69,15 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				ctx.ui.theme.fg("accent", `📋 ${completed}/${state.todoItems.length}`),
 			);
 		} else if (state.planModeEnabled) {
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", `⏸ plan`));
+			const tokenInfo = tokensActive
+				? ` ~${Math.round(
+						metrics.sessionInputTokens / Math.max(1, metrics.turns),
+					)}t/turn`
+				: "";
+			ctx.ui.setStatus(
+				"plan-mode",
+				ctx.ui.theme.fg("warning", `⏸ plan${tokenInfo}`),
+			);
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
@@ -105,6 +115,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			todos: state.todoItems,
 			executing: state.executionMode,
 			turnCount: state.planModeTurnCount,
+			tokenMetrics: state.tokenMetrics,
 		});
 	}
 

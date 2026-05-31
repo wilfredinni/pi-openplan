@@ -32,7 +32,21 @@ function ensurePlansDir(cwd: string): string {
 	return dir;
 }
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string, preservePath?: boolean): string {
+	if (preservePath) {
+		// Preserve directory separators — sanitize each component independently
+		const parts = name.replace(/\.md$/i, "").split("/");
+		return parts
+			.map((p) =>
+				p
+					.replace(/[^a-zA-Z0-9_-]/g, "-")
+					.replace(/-+/g, "-")
+					.replace(/^-|-$/g, "")
+					.toLowerCase()
+					.slice(0, 120),
+			)
+			.join("/");
+	}
 	return name
 		.replace(/\.md$/i, "")
 		.replace(/[^a-zA-Z0-9_-]/g, "-")
@@ -51,7 +65,7 @@ function parseFrontmatter(raw: string): {
 
 	const frontmatter: Record<string, string> = {};
 	for (const line of match[1].split("\n")) {
-		const kv = line.match(/^(\w+):\s*(.+)\s*$/);
+		const kv = line.match(/^([\w-]+):\s*(.+)\s*$/);
 		if (kv) frontmatter[kv[1]] = kv[2].replace(/^"(.*)"$/, "$1").trim();
 	}
 

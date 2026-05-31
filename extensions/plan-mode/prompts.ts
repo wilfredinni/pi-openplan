@@ -21,14 +21,11 @@
 // Pattern: caveman-micro proven 6-line structure.
 
 export const CONCISENESS_DIRECTIVE = `## Communication
-
-Respond terse. Drop filler, keep substance.
-- Drop articles (a/an/the), filler (just/really/basically), pleasantries (sure/certainly).
+Respond terse. Drop filler (a/an/the, just/really/basically, sure/certainly).
 - No hedging. Fragments OK. Short synonyms.
-- Technical terms exact. Code blocks unchanged. Errors quoted exact.
+- Tech terms exact. Code blocks unchanged. Errors quoted exact.
 - Pattern: [thing] [action] [reason]. [next step].
-
-Drop terseness for security warnings, destructive actions, or when user asks to clarify.`;
+Drop terseness for security warnings, destructive actions, or clarify.`;
 
 // ── Plan Mode System Prompt ──────────────────────────────────────────────
 // ~65 lines, ~350 words, ~455 tokens (vs v1.0: 180 lines, 939 words, ~1,221 tokens)

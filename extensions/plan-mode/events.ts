@@ -25,6 +25,7 @@ import {
 	PLAN_MODE_TOOLS,
 	type TodoItem,
 } from "./state.ts";
+import { recordInput, recordOutput } from "./token-metrics.ts";
 export function registerEvents(
 	pi: ExtensionAPI,
 	state: PlanModeState,
@@ -57,6 +58,8 @@ export function registerEvents(
 				state.planModeTurnCount <= 1
 					? PLAN_MODE_SYSTEM_PROMPT
 					: PLAN_MODE_SYSTEM_PROMPT_BRIEF;
+			// Record injected prompt tokens for savings tracking
+			recordInput(state.tokenMetrics, prompt);
 			return {
 				message: {
 					customType: "plan-mode-context",
@@ -70,6 +73,8 @@ export function registerEvents(
 			const remaining = state.todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
 			const execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
+			// Record execution prompt tokens
+			recordInput(state.tokenMetrics, execContent);
 			return {
 				message: {
 					customType: "plan-execution-context",
@@ -88,6 +93,9 @@ export function registerEvents(
 		if (!isAssistantMessage(event.message)) return;
 
 		const text = getTextContent(event.message);
+		// Record output tokens for savings tracking
+		recordOutput(state.tokenMetrics, text);
+
 		if (markCompletedSteps(text, state.todoItems) > 0) {
 			callbacks.updateUI(ctx);
 		}
@@ -202,6 +210,13 @@ export function registerEvents(
 						todos?: TodoItem[];
 						executing?: boolean;
 						turnCount?: number;
+						tokenMetrics?: {
+							totalInputTokens: number;
+							totalOutputTokens: number;
+							sessionInputTokens: number;
+							sessionOutputTokens: number;
+							turns: number;
+						};
 					};
 			  }
 			| undefined;
@@ -212,6 +227,9 @@ export function registerEvents(
 			state.todoItems = planModeEntry.data.todos ?? state.todoItems;
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
 			state.planModeTurnCount = planModeEntry.data.turnCount ?? 0;
+			if (planModeEntry.data.tokenMetrics) {
+				state.tokenMetrics = planModeEntry.data.tokenMetrics;
+			}
 		}
 
 		// On resume, re-scan messages for [DONE:n] markers

@@ -153,6 +153,38 @@ describe("isSafeCommand", () => {
 		}
 	});
 
+	describe("false positive prevention (quoted strings)", () => {
+		it("allows echo with blocked substring in quotes", () => {
+			expect(isSafeCommand('echo "use rm -rf carefully"')).toBe(true);
+		});
+
+		it("allows echo with blocked substring in single quotes", () => {
+			expect(isSafeCommand("echo 'rm -rf /'")).toBe(true);
+		});
+
+		it("allows printf with blocked substring in quotes", () => {
+			expect(isSafeCommand("printf '%s\\n' 'rm -rf /'")).toBe(true);
+		});
+
+		it("allows echo with multiple blocked substrings", () => {
+			expect(isSafeCommand('echo "run rm -rf on /tmp then sudo reboot"')).toBe(
+				true,
+			);
+		});
+
+		it("still blocks semicolons with destructive after echo", () => {
+			expect(isSafeCommand('echo "hi"; rm -rf /')).toBe(false);
+		});
+
+		it("still blocks semicolons with destructive after printf", () => {
+			expect(isSafeCommand('printf "ok"; sudo rm -rf /')).toBe(false);
+		});
+
+		it("still blocks direct destructive commands with trailing safe cmd", () => {
+			expect(isSafeCommand("rm file.txt; echo done")).toBe(false);
+		});
+	});
+
 	describe("edge cases", () => {
 		it("blocks empty string", () => {
 			expect(isSafeCommand("")).toBe(false);

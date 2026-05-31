@@ -9,6 +9,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TokenMetricsState } from "./token-metrics.ts";
 // ── Tool Sets ───────────────────────────────────────────────────────────
 
 /** Tools allowed in plan mode (read-only + plan management) */
@@ -53,6 +54,7 @@ export interface PlanModeState {
 	executionMode: boolean;
 	todoItems: TodoItem[];
 	planModeTurnCount: number;
+	tokenMetrics: TokenMetricsState;
 }
 
 // ── Callbacks (UI / persistence) ────────────────────────────────────────
@@ -73,6 +75,13 @@ export function createInitialState(): PlanModeState {
 		executionMode: false,
 		todoItems: [],
 		planModeTurnCount: 0,
+		tokenMetrics: {
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			sessionInputTokens: 0,
+			sessionOutputTokens: 0,
+			turns: 0,
+		},
 	};
 }
 

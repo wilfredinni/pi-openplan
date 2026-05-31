@@ -114,9 +114,21 @@ const SAFE_PATTERNS = [
 /**
  * Check if a shell command is safe to run in plan mode.
  * Returns true if the command matches a known safe pattern and no destructive pattern.
+ *
+ * Quoted strings are stripped before checking destructive patterns to avoid false
+ * positives on display-only commands like `echo "use rm -rf"` — the content inside
+ * quotes is output text, not executed commands. Semicolon-chained commands like
+ * `echo "hi"; rm -rf /` are still blocked because the semicolon is outside quotes.
  */
 export function isSafeCommand(command: string): boolean {
-	const isDestructive = DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
+	// Match safe pattern first — command must start with an allowed prefix
 	const isSafe = SAFE_PATTERNS.some((p) => p.test(command));
-	return !isDestructive && isSafe;
+	if (!isSafe) return false;
+
+	// Strip quoted strings before checking destructive patterns.
+	// Catches: echo "use rm -rf" → harmless output text, not execution.
+	// Still blocks: echo "hi"; rm -rf / → semicolon chaining outside quotes.
+	const unquoted = command.replace(/"[^"]*"/g, "").replace(/'[^']*'/g, "");
+	const isDestructive = DESTRUCTIVE_PATTERNS.some((p) => p.test(unquoted));
+	return !isDestructive;
 }
