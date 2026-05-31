@@ -15,11 +15,7 @@ import {
 	readPlanFile,
 	slugify,
 } from "./plan-files.ts";
-import type { PlanModeState } from "./state.ts";
-
-export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
-	const metrics = state.metrics;
-
+export function registerTools(pi: ExtensionAPI): void {
 	// ── plan_write ──────────────────────────────────────────────────────
 
 	pi.registerTool({
@@ -85,7 +81,6 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 				const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
 
 				const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
-				metrics.record("plan-content", planMessageContent.length);
 
 				// Display the plan as a rendered markdown message in the conversation
 				pi.sendMessage(
@@ -163,7 +158,6 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 				const planReadResponse = full
 					? `# ${plan.metadata.title}\nStatus: ${plan.metadata.status} | Created: ${plan.metadata.created} | Type: ${plan.metadata.type}\n\n${plan.content}`
 					: `# ${plan.metadata.title} [${plan.metadata.status}]\n${plan.metadata.type} · ${plan.metadata.created.slice(0, 10)}\n${plan.filename}`;
-				metrics.record("tool-response", planReadResponse.length);
 				return {
 					content: [
 						{
@@ -229,7 +223,6 @@ export function registerTools(pi: ExtensionAPI, state: PlanModeState): void {
 					)
 					.join("\n");
 				const planListResponse = `# Saved Plans\n\n${list}`;
-				metrics.record("tool-response", planListResponse.length);
 				return {
 					content: [{ type: "text", text: planListResponse }],
 					details: {

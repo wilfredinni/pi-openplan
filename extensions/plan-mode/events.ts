@@ -25,8 +25,6 @@ import {
 	PLAN_MODE_TOOLS,
 	type TodoItem,
 } from "./state.ts";
-import type { TokenMetricsSnapshot } from "./token-metrics.ts";
-
 export function registerEvents(
 	pi: ExtensionAPI,
 	state: PlanModeState,
@@ -59,8 +57,6 @@ export function registerEvents(
 				state.planModeTurnCount <= 1
 					? PLAN_MODE_SYSTEM_PROMPT
 					: PLAN_MODE_SYSTEM_PROMPT_BRIEF;
-			state.metrics.record("system-prompt", prompt.length);
-			state.lastTurnOverhead = Math.ceil(prompt.length / 4);
 			return {
 				message: {
 					customType: "plan-mode-context",
@@ -74,7 +70,6 @@ export function registerEvents(
 			const remaining = state.todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
 			const execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
-			state.metrics.record("execution-context", execContent.length);
 			return {
 				message: {
 					customType: "plan-execution-context",
@@ -88,15 +83,7 @@ export function registerEvents(
 	// ── Track [DONE:n] Markers ──────────────────────────────────────────
 
 	pi.on("turn_end", async (event, ctx) => {
-		// Record output tokens from agent responses
 		if (!event.message) return;
-		if (isAssistantMessage(event.message)) {
-			const text = getTextContent(event.message);
-			if (text.length > 0) {
-				state.metrics.recordOutput(text.length);
-			}
-		}
-
 		if (!state.executionMode || state.todoItems.length === 0) return;
 		if (!isAssistantMessage(event.message)) return;
 
@@ -119,7 +106,6 @@ export function registerEvents(
 					.map((t) => `~~${t.text}~~`)
 					.join("\n");
 				const completeContent = `**Plan Complete!** ✓\n\n${completedList}`;
-				state.metrics.record("plan-complete", completeContent.length);
 				pi.sendMessage(
 					{
 						customType: "plan-complete",
@@ -145,7 +131,6 @@ export function registerEvents(
 				if (text.includes("⏸") || text.includes("PAUSE")) {
 					const pauseContent =
 						"⏸️ **Pause point reached.** Review the completed phase before continuing.";
-					state.metrics.record("plan-pause", pauseContent.length);
 					pi.sendMessage(
 						{
 							customType: "plan-pause",
@@ -181,7 +166,6 @@ export function registerEvents(
 				.map((t, i) => `${i + 1}. ○ ${t.text}`)
 				.join("\n");
 			const todoListContent = `**Plan Steps (${state.todoItems.length}):**\n\n${todoListText}`;
-			state.metrics.record("plan-todo-list", todoListContent.length);
 			pi.sendMessage(
 				{
 					customType: "plan-todo-list",
@@ -226,20 +210,6 @@ export function registerEvents(
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
 			state.planModeTurnCount = planModeEntry.data.turnCount ?? 0;
 		}
-
-		// Restore token metrics from persisted entries
-		const tokenEntries: TokenMetricsSnapshot[] = [];
-		for (const entry of entries) {
-			if (
-				(entry as { type: string; customType?: string }).type === "custom" &&
-				(entry as { type: string; customType?: string }).customType ===
-					"plan-mode-tokens"
-			) {
-				const data = (entry as { data?: TokenMetricsSnapshot[] }).data;
-				if (data) tokenEntries.push(...data);
-			}
-		}
-		state.metrics.fromSnapshots(tokenEntries);
 
 		// On resume, re-scan messages for [DONE:n] markers
 		const isResume = planModeEntry !== undefined;

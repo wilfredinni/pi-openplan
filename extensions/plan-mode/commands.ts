@@ -23,14 +23,6 @@ import {
 	type PlanModeCallbacks,
 	type PlanModeState,
 } from "./state.ts";
-import type {
-	TokenMetricsSnapshot,
-	TokenMetricsSummary,
-} from "./token-metrics.ts";
-import {
-	aggregateLifetimeMetrics,
-	formatTokenReport,
-} from "./token-metrics.ts";
 
 export function registerCommands(
 	pi: ExtensionAPI,
@@ -43,20 +35,6 @@ export function registerCommands(
 		description:
 			"Toggle plan mode (read-only exploration with structured planning)",
 		handler: async (_args, ctx) => callbacks.togglePlanMode(ctx),
-	});
-
-	// ── /tokens-toggle ──────────────────────────────────────────────────
-
-	pi.registerCommand("tokens-toggle", {
-		description: "Toggle showing per-turn token overhead in the footer status",
-		handler: async (_args, ctx) => {
-			state.showTokenOverhead = !state.showTokenOverhead;
-			ctx.ui.notify(
-				`Token overhead ${state.showTokenOverhead ? "shown" : "hidden"} in footer`,
-				"info",
-			);
-			callbacks.updateUI(ctx);
-		},
 	});
 
 	// ── /compress-context ───────────────────────────────────────────────
@@ -147,45 +125,6 @@ export function registerCommands(
 		},
 	});
 
-	// ── /tokens ─────────────────────────────────────────────────────────
-
-	pi.registerCommand("tokens", {
-		description: "Show token usage metrics for plan mode",
-		handler: async (_args, ctx) => {
-			const sessionSummary = state.metrics.getSummary();
-
-			const entries = ctx.sessionManager.getEntries();
-			const tokenEntries: TokenMetricsSnapshot[] = [];
-			for (const entry of entries) {
-				if (
-					(entry as { type: string; customType?: string }).type === "custom" &&
-					(entry as { type: string; customType?: string }).customType ===
-						"plan-mode-tokens"
-				) {
-					const data = (entry as { data?: TokenMetricsSnapshot[] }).data;
-					if (data) tokenEntries.push(...data);
-				}
-			}
-			const lifetime = aggregateLifetimeMetrics(tokenEntries);
-
-			const summary: TokenMetricsSummary = {
-				session: {
-					totalTokens: sessionSummary.total,
-					sources: sessionSummary.sources,
-					outputTokens: sessionSummary.output,
-				},
-				lifetime: {
-					totalTokens: lifetime.totalTokens,
-					sessions: lifetime.sessions,
-					perCategory: lifetime.perCategory,
-				},
-			};
-
-			const report = formatTokenReport(summary);
-			ctx.ui.notify(report, "info");
-		},
-	});
-
 	// ── /execute_plan ───────────────────────────────────────────────────
 
 	pi.registerCommand("execute_plan", {
@@ -238,14 +177,12 @@ export function registerCommands(
 
 			if (planContent) {
 				const planTitle = planContent.match(/^#[\s]+(.+)/m)?.[1] || "Plan";
-				state.metrics.record("plan-content", planContent.length);
 				pi.sendUserMessage(
 					`Execute plan "${planTitle}" (${planName}). ` +
 						`Read full content via plan_read(full:true) if needed. ` +
 						`${state.todoItems.length} phases. Tag [DONE:n], pause at ⏸️ markers.`,
 				);
 			} else {
-				state.metrics.record("plan-content", 0);
 				pi.sendUserMessage(
 					"Execute the plan. Mark phases with [DONE:n]. Pause at ⏸️ markers.",
 				);
