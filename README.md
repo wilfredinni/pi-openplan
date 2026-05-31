@@ -15,7 +15,7 @@
 | 🎯 **Progress tracking** | Mark plan steps complete with `[DONE:n]` tags — widget shows live progress. Session resume re-scans for completed markers. |
 | ⏸️ **Pause points** | Detection of `⏸️ PAUSE` markers in plans for verification gates. Auto-pauses execution at each gate. |
 | ⚡ **Token optimization** | System prompt reduced ~63% (→455 tokens). Caveman conciseness directive cuts output ~15–20%. Brief prompt variant on turns 2+. |
-| 📊 **Token metrics** | `/tokens` command shows session + lifetime token usage. Footer displays per-turn overhead (`+{N}T`). Toggle with `/tokens-toggle`. |
+| 📊 **Token metrics** | `/tokens` command shows session + lifetime token usage. Footer displays per-turn overhead (`+{N}T`). Toggle with `/tokens-toggle` or use `--plan-token-verify` flag. |
 | 🗜️ **Context compression** | `/compress-context` compresses .md/.txt files into caveman-speak, preserving code/URLs/paths. Original backed up as `.original.*`. |
 | 🔄 **State persistence** | Plan mode state, todos, execution mode, and token metrics survive session restarts and `/reload`. |
 
@@ -132,6 +132,15 @@ Start pi in plan mode:
 pi --plan
 ```
 
+### `--plan-token-verify`
+
+Start pi with per-turn token overhead shown in the footer automatically (debug flag, no user command needed). Shows `+{N}T` in the plan mode and execution mode footer:
+
+```bash
+pi --plan-token-verify
+pi --plan --plan-token-verify  # combine with --plan
+```
+
 ## Tools (LLM-callable)
 
 These tools are registered for the LLM to use:
@@ -215,6 +224,7 @@ pi-openplan uses a two-pronged token efficiency strategy:
 
 ### Output Optimization
 - Caveman-style conciseness directive (~85 tokens) instructs the LLM to respond tersely
+- Applied to both **plan mode** and **execution mode** system prompts for consistent output behavior
 - Proven ~15–20% output reduction with zero accuracy loss
 - Auto-escape hatch: drops terseness for security warnings, destructive actions, or when asked to clarify
 

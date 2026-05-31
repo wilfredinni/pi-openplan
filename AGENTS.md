@@ -9,6 +9,7 @@ npm run lint           # biome check .
 npm run format         # biome format --write .
 npm test               # exits 0 — no tests exist yet
 pi -e .                # load extension locally in pi for manual testing
+pi -e . --plan-token-verify  # enable token overhead footer display (debug)
 ```
 
 ## What This Is
@@ -34,7 +35,7 @@ A **pi extension** (v1.3.0), not a standalone app. The host is `pi` CLI. Single 
 - **Token estimation uses `char/4`.** No tokenizer dependency. All counts labeled approximate in the UI.
 - **Plan files** live in `.pi/plans/` (gitignored). One `.md` file per plan with YAML frontmatter (`title`, `status`, `created`, `type`, optional `updated`). Statuses: `draft`, `approved`, `in_progress`, `done`. Types: `feature`, `fix`, `refactor`, `chore`.
 - **Bash safety is dual-gate:** a command must _not_ match any destructive pattern AND _must_ match a known safe pattern. Unknown commands (matching neither list) are conservatively blocked.
-- **System prompt only injected once per mode session** (`planModeTurnCount <= 1` gets full prompt; later turns get brief ~200-token variant).
+- **System prompt only injected once per mode session** (`planModeTurnCount <= 1` gets full prompt; later turns get brief ~200-token variant). Both plan mode and execution mode prompts include the caveman conciseness directive.
 - **Progress tracking** via `[DONE:n]` tags in agent responses. Extraction handles interruption — on session resume, re-scans all messages after the `plan-mode-execute` entry marker.
 
 ## Development Flow

@@ -34,4 +34,5 @@ pi-openplan/
 - **3 commands**: `/plan`, `/plans`, `/execute_plan [name]`
 - **4 LLM tools**: `plan_write`, `plan_read`, `plan_list`, `plan_question`
 - **6 event hooks**: `tool_call`, `before_agent_start`, `turn_end`, `agent_end`, `session_start`, `context`
-- **Token optimization**: ~455 token system prompt (63% reduction), caveman conciseness directive
+- **CLI flags**: `--plan` (start in plan mode), `--plan-token-verify` (auto-show per-turn token overhead)
+- **Token optimization**: ~455 token system prompt (63% reduction), caveman conciseness directive applied to both plan and execution modes
