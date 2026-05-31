@@ -104,6 +104,8 @@ const SAFE_PATTERNS = [
 	/^\s*bat\b/,
 	/^\s*eza\b/,
 	/^\s*make\s+(test|test-cov|shell|logs)/i,
+	/^\s*npx\s+vitest\b/i,
+	/^\s*git\s+config\s+--list\b/i,
 	/^\s*cd\b/i,
 ];
 

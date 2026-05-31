@@ -93,7 +93,7 @@ export function getTextContent(message: AssistantMessage): string {
 
 export function extractTodosFromPlan(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
-	const headerMatch = message.match(/\*{0,2}Phase\s+\d+\*{0,2}[:*-]?\s*\n/i);
+	const headerMatch = message.match(/\*{0,2}Phase\s+\d+\*{0,2}[*:-]?\s*\n/i);
 	if (!headerMatch) {
 		// Fallback: look for "Plan:" header
 		const planMatch = message.match(/\*{0,2}Plan:\*{0,2}\s*\n/i);
@@ -102,7 +102,7 @@ export function extractTodosFromPlan(message: string): TodoItem[] {
 		const planSection = message.slice(
 			message.indexOf(planMatch[0]) + planMatch[0].length,
 		);
-		const numberedPattern = /^\s*(\d+)[.)]\s+\*{0,2}([^*\n]+)/gm;
+		const numberedPattern = /^\s*(\d+)[.)]\s+\*{0,2}([^\n]+)/gm;
 		for (const match of planSection.matchAll(numberedPattern)) {
 			const text = match[2]
 				.trim()
@@ -121,7 +121,7 @@ export function extractTodosFromPlan(message: string): TodoItem[] {
 
 	// Extract phases from the plan
 	const phasePattern =
-		/(?:###?\s*)?\*{0,2}Phase\s+(\d+)\*{0,2}[:*-]?\s*([^\n]+)/gi;
+		/(?:###?\s*)?\*{0,2}Phase\s+(\d+)\*{0,2}[*:-]?\s*([^\n]+)/gi;
 	for (const match of message.matchAll(phasePattern)) {
 		const num = parseInt(match[1], 10);
 		const name = match[2].trim();

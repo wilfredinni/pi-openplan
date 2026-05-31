@@ -152,11 +152,14 @@ export function registerEvents(
 			.find(isAssistantMessage);
 		if (lastAssistant) {
 			const text = getTextContent(lastAssistant);
-			const extracted = extractTodosFromPlan(text);
-			if (extracted.length > 0) {
-				state.todoItems = extracted;
-				callbacks.updateUI(ctx);
-				callbacks.persistState();
+			// Only extract todos when none exist yet (prevent overwrite on follow-up turns)
+			if (state.todoItems.length === 0) {
+				const extracted = extractTodosFromPlan(text);
+				if (extracted.length > 0) {
+					state.todoItems = extracted;
+					callbacks.updateUI(ctx);
+					callbacks.persistState();
+				}
 			}
 		}
 
@@ -226,19 +229,22 @@ export function registerEvents(
 				}
 			}
 
-			const messages: AssistantMessage[] = [];
-			for (let i = executeIndex + 1; i < entries.length; i++) {
-				const entry = entries[i];
-				if (
-					entry.type === "message" &&
-					"message" in entry &&
-					isAssistantMessage(entry.message as AgentMessage)
-				) {
-					messages.push(entry.message as AssistantMessage);
+			// Only re-scan if we found the execute marker
+			if (executeIndex >= 0) {
+				const messages: AssistantMessage[] = [];
+				for (let i = executeIndex + 1; i < entries.length; i++) {
+					const entry = entries[i];
+					if (
+						entry.type === "message" &&
+						"message" in entry &&
+						isAssistantMessage(entry.message as AgentMessage)
+					) {
+						messages.push(entry.message as AssistantMessage);
+					}
 				}
+				const allText = messages.map(getTextContent).join("\n");
+				markCompletedSteps(allText, state.todoItems);
 			}
-			const allText = messages.map(getTextContent).join("\n");
-			markCompletedSteps(allText, state.todoItems);
 		}
 
 		// Apply tool restrictions
@@ -256,18 +262,23 @@ export function registerEvents(
 		// When not in plan mode, clean up plan-mode context messages
 		return {
 			messages: event.messages.filter((m) => {
-				const msg = m as AgentMessage & {
-					customType?: string;
-				};
+				// Safely access customType — could be top-level or nested on raw entries
+				const msgAny = m as unknown as Record<string, unknown>;
+				const customType =
+					typeof msgAny.customType === "string"
+						? msgAny.customType
+						: ((msgAny.data as Record<string, unknown> | undefined)
+								?.customType ?? undefined);
 				if (
-					msg.customType === "plan-mode-context" ||
-					msg.customType === "plan-execution-context"
+					customType === "plan-mode-context" ||
+					customType === "plan-execution-context"
 				) {
 					return false;
 				}
-				if (msg.role !== "user") return true;
+				const am = m as AgentMessage;
+				if (am.role !== "user") return true;
 
-				const content = msg.content;
+				const content = am.content;
 				if (typeof content === "string") {
 					return !content.includes("[Plan Mode ACTIVE]");
 				}

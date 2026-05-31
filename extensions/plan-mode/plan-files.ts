@@ -51,8 +51,8 @@ function parseFrontmatter(raw: string): {
 
 	const frontmatter: Record<string, string> = {};
 	for (const line of match[1].split("\n")) {
-		const kv = line.match(/^(\w+):\s*"?(.+?)"?\s*$/);
-		if (kv) frontmatter[kv[1]] = kv[2].replace(/^"|"$/g, "");
+		const kv = line.match(/^(\w+):\s*(.+)\s*$/);
+		if (kv) frontmatter[kv[1]] = kv[2].replace(/^"(.*)"$/, "$1").trim();
 	}
 
 	const s = frontmatter.status;
@@ -118,9 +118,17 @@ export function readPlanFile(cwd: string, filename: string): PlanFile | null {
 		// Try fuzzy match in plans dir
 		try {
 			const files = fs.readdirSync(planDir);
-			const match = files.find(
-				(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
+			// Prefer exact suffix match (date-prefix convention: YYYY-MM-DD-name.md)
+			const suffixMatch = files.find(
+				(f) =>
+					f.toLowerCase().endsWith(`-${safeName}.md`) ||
+					f.toLowerCase().endsWith(`${safeName}.md`),
 			);
+			const match =
+				suffixMatch ??
+				files.find(
+					(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
+				);
 			if (match) filepath = path.join(planDir, match);
 			else return null;
 		} catch {
@@ -211,7 +219,13 @@ export function updatePlanStatus(
 	plan.metadata.status = status;
 	plan.metadata.updated = new Date().toISOString();
 
-	createPlanFile(cwd, filename, plan.content, plan.metadata);
+	// Write back to the SAME file that was found
+	const planDir = path.join(cwd, PLANS_DIR);
+	const filepath = path.join(planDir, plan.filename);
+	const fullContent = serializeFrontmatter(plan.metadata) + plan.content;
+	fs.mkdirSync(path.dirname(filepath), { recursive: true });
+	fs.writeFileSync(filepath, fullContent, "utf-8");
+
 	return plan;
 }
 
