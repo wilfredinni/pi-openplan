@@ -67,14 +67,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				ctx.ui.theme.fg("accent", `📋 ${completed}/${state.todoItems.length}`),
 			);
 		} else if (state.planModeEnabled) {
-			const overhead =
-				state.showTokenOverhead && state.lastTurnOverhead > 0
-					? ` · +${state.lastTurnOverhead}T`
-					: "";
-			ctx.ui.setStatus(
-				"plan-mode",
-				ctx.ui.theme.fg("warning", `⏸ plan${overhead}`),
-			);
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", `⏸ plan`));
 		} else {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
@@ -113,11 +106,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			executing: state.executionMode,
 			turnCount: state.planModeTurnCount,
 		});
-		// Persist token metrics
-		const snapshots = state.metrics.toSnapshot();
-		if (snapshots.length > 0) {
-			pi.appendEntry("plan-mode-tokens", snapshots);
-		}
 	}
 
 	function enterPlanMode(
@@ -175,7 +163,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── Register Modules ──────────────────────────────────────────────
 
 	registerCommands(pi, state, callbacks);
-	registerTools(pi, state);
-	registerPlanQuestionTool(pi, state);
+	registerTools(pi);
+	registerPlanQuestionTool(pi);
 	registerEvents(pi, state, callbacks);
 }

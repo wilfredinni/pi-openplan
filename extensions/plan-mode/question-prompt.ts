@@ -15,8 +15,6 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { PlanModeState } from "./state.ts";
-
 // ── Constants ─────────────────────────────────────────────────────
 
 export const MAX_QUESTIONS = 4;
@@ -585,10 +583,7 @@ export class PlanQuestionPrompt {
 
 // ── Tool Factory ────────────────────────────────────────────────────────
 
-export function registerPlanQuestionTool(
-	pi: ExtensionAPI,
-	state: PlanModeState,
-): void {
+export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "plan_question",
 		label: "Ask Questions",
@@ -719,7 +714,6 @@ export function registerPlanQuestionTool(
 						return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
 					})
 					.join("\n");
-				state.metrics.record("tool-response", answersResponse.length);
 				return {
 					content: [
 						{
@@ -740,7 +734,6 @@ export function registerPlanQuestionTool(
 				.join("\n\n");
 
 			const nonInteractiveResponse = `This terminal does not support interactive questions. Make reasonable assumptions based on the context:\n\n${questionText}`;
-			state.metrics.record("tool-response", nonInteractiveResponse.length);
 			return {
 				content: [
 					{

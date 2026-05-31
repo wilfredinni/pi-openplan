@@ -15,9 +15,7 @@
 | 🎯 **Progress tracking** | Mark plan steps complete with `[DONE:n]` tags — widget shows live progress. Session resume re-scans for completed markers. |
 | ⏸️ **Pause points** | Detection of `⏸️ PAUSE` markers in plans for verification gates. Auto-pauses execution at each gate. |
 | ⚡ **Token optimization** | System prompt reduced ~63% (→455 tokens). Caveman conciseness directive cuts output ~15–20%. Brief prompt variant on turns 2+. |
-| 📊 **Token metrics** | `/tokens` command shows session + lifetime token usage. Footer displays per-turn overhead (`+{N}T`). Toggle with `/tokens-toggle`. |
-| 🗜️ **Context compression** | `/compress-context` compresses .md/.txt files into caveman-speak, preserving code/URLs/paths. Original backed up as `.original.*`. |
-| 🔄 **State persistence** | Plan mode state, todos, execution mode, and token metrics survive session restarts and `/reload`. |
+| 🔄 **State persistence** | Plan mode state, todos, and execution mode survive session restarts and `/reload`. |
 
 ## Installation
 
@@ -52,9 +50,6 @@ After installing, restart pi or run `/reload`.
 # Execute a saved plan (loads plan, enters execution mode, tracks progress)
 /execute_plan my-plan-name
 
-# Check token usage
-/tokens
-
 # Disable plan mode (back to full access)
 /plan
 ```
@@ -82,38 +77,6 @@ Exit plan mode and execute a saved plan. If a plan name is given, loads the plan
 
 # Execute without a plan (generic execution mode)
 /execute_plan
-```
-
-### `/tokens`
-
-Show token usage metrics for plan mode. Displays session totals, lifetime totals, input overhead per source (system prompts, tool descriptions, plan content, tool responses), and output tokens.
-
-```
-Plan Mode Token Usage
-──────────────────────────
-This session:      1.2k tokens
-All sessions:     34.5k tokens
-──────────────────────────
-Input overhead (per turn avg):
-  system-prompt:     455 tokens
-  tool-descriptions: 210 tokens
-  plan-content:      180 tokens
-```
-
-### `/tokens-toggle`
-
-Toggle showing per-turn token overhead in the footer status bar. When enabled, footer shows `⏸ plan +455T` indicating plan mode with token overhead per turn.
-
-### `/compress-context [file]`
-
-Compress a context file (default: `context.md`) into caveman-speak to save input tokens. Drops filler words, articles, and pleasantries while preserving code blocks, URLs, file paths, and inline code. Original backed up as `{file}.original.{ext}`. Only works on `.md`, `.txt`, `.typ`, `.tex` files.
-
-```bash
-# Compress default context.md
-/compress-context
-
-# Compress a specific file
-/compress-context docs/architecture.md
 ```
 
 ## Keyboard Shortcuts
@@ -218,12 +181,6 @@ pi-openplan uses a two-pronged token efficiency strategy:
 - Proven ~15–20% output reduction with zero accuracy loss
 - Auto-escape hatch: drops terseness for security warnings, destructive actions, or when asked to clarify
 
-### Metrics & Observability
-- Token tracking uses `char/4` estimation (fast, no external deps)
-- Per-category breakdown: system prompts, tool descriptions, plan content, tool responses, agent output
-- Session + lifetime aggregation across restarts
-- Footer status shows per-turn overhead when toggled on
-
 Research basis: [caveman](https://github.com/JuliusBrussee/caveman) (65% avg output reduction), [caveman-micro](https://github.com/kuba-guzik/caveman-micro) (6-line variant outperforms full skill), [arxiv.org/abs/2604.00025](https://arxiv.org/abs/2604.00025) (brevity constraints improved accuracy by 26 points).
 
 ## Plan File Format
@@ -269,10 +226,9 @@ Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The
 4. **Plan**: The LLM creates a structured plan using `plan_write` with phases, verification steps, and risks — plan renders inline in conversation
 5. **Review**: The LLM presents the plan summary and stops — no prompts or choices
 6. **Execute**: Use `/execute_plan <plan-name>` to load the plan and begin phased execution
-7. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress; footer shows token overhead
+7. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
 8. **Verify**: At each ⏸️ pause point, review before continuing
 9. **Complete**: When all steps are done, the extension announces completion and resets execution mode
-10. **Monitor**: Use `/tokens` to see how many tokens plan mode consumed
 
 ## Architecture
 
@@ -282,14 +238,13 @@ The extension is organized into 9 focused modules under `extensions/plan-mode/`:
 |---|---|
 | `index.ts` | Orchestrator — extension entry point, registers all modules |
 | `state.ts` | Shared typed state (`PlanModeState`), tool sets, todo extraction, message helpers |
-| `commands.ts` | Command handlers: `/plan`, `/plans`, `/execute_plan`, `/tokens`, `/tokens-toggle`, `/compress-context` |
+| `commands.ts` | Command handlers: `/plan`, `/plans`, `/execute_plan` |
 | `events.ts` | Event handlers: bash safety, prompt injection, DONE tracking, completion/pause, session restore, context filtering |
 | `tools.ts` | Tool registrations: `plan_write`, `plan_read`, `plan_list` |
 | `question-prompt.ts` | Interactive `plan_question` tool with TUI overlay |
 | `prompts.ts` | System prompts (full + brief), conciseness directive, execution mode prompt, plan template |
-| `token-metrics.ts` | Token estimation, collection, lifetime aggregation, report formatting |
 | `bash-safety.ts` | Dual-gate command safety (destructive patterns + safe patterns) |
-| `plan-files.ts` | CRUD operations for `.pi/plans/`, frontmatter parsing, text compression |
+| `plan-files.ts` | CRUD operations for `.pi/plans/`, frontmatter parsing |
 
 ## Development
 
