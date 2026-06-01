@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/wilfredinni/pi-openplan/compare/v1.4.0...v1.5.0) (2026-06-01)
+
+
+### Features
+
+* Streamline README and fix AGENTS.md frontmatter docs ([eeb894e](https://github.com/wilfredinni/pi-openplan/commit/eeb894ee6d833a1ef3ee08cf223ccf4441d41981))
+
 ## [1.4.0](https://github.com/wilfredinni/pi-openplan/compare/v1.3.0...v1.4.0) (2026-05-31)
 
 
