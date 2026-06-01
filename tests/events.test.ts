@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerEvents } from "../extensions/plan-mode/events.ts";
-import { PLAN_MODE_TOOLS } from "../extensions/plan-mode/state.ts";
 import {
 	createCallbacks,
 	createMockCtx,
@@ -25,6 +24,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "tool_call",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -75,6 +75,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "before_agent_start",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -110,6 +111,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "turn_end",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -155,6 +157,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "agent_end",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -190,6 +193,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "session_start",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -212,6 +216,7 @@ describe("events", () => {
 		function getHandler() {
 			return (pi.on as ReturnType<typeof vi.fn>).mock.calls.find(
 				(c: unknown[]) => c[0] === "context",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[1] as Function;
 		}
 
@@ -233,7 +238,7 @@ describe("events", () => {
 			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
 		});
 
-		it("returns undefined (no-op) when plan mode is active", async () => {
+		it("keeps plan-mode-context messages when plan mode is active", async () => {
 			state.planModeEnabled = true;
 			const handler = getHandler();
 			const result = await handler({
@@ -244,11 +249,14 @@ describe("events", () => {
 						content: "prompt",
 						display: false,
 					},
+					{ role: "user", content: "world" },
 				],
 			});
 
-			// Handler returns early (undefined) when plan mode is active
-			expect(result).toBeUndefined();
+			// Handler filters but keeps most recent plan-mode-context
+			expect(result).toBeDefined();
+			expect(result.messages.length).toBe(3);
+			expect(result.messages[1].customType).toBe("plan-mode-context");
 		});
 	});
 });

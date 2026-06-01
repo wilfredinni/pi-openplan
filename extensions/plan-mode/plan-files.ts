@@ -7,6 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseFrontmatter as parseSdkFrontmatter } from "@earendil-works/pi-coding-agent";
 
 const PLANS_DIR = ".pi/plans";
 
@@ -42,37 +43,44 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 120);
 }
 
+/**
+ * Parse YAML frontmatter using the SDK's parser (handles colons, quotes, multi-line).
+ * Returns typed PlanMetadata fields and the body content.
+ */
 function parseFrontmatter(raw: string): {
 	metadata: Partial<PlanMetadata>;
 	body: string;
 } {
-	const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-	if (!match) return { metadata: {}, body: raw };
+	const { frontmatter, body } = parseSdkFrontmatter(raw);
 
-	const frontmatter: Record<string, string> = {};
-	for (const line of match[1].split("\n")) {
-		const kv = line.match(/^(\w+):\s*"?(.+?)"?\s*$/);
-		if (kv) frontmatter[kv[1]] = kv[2].replace(/^"|"$/g, "");
-	}
+	// Cast from unknown (SDK returns Record<string, unknown>)
+	const cast = (v: unknown): string | undefined =>
+		typeof v === "string" ? v : undefined;
 
-	const s = frontmatter.status;
-	const t = frontmatter.type;
+	const s = cast(frontmatter.status);
+	const t = cast(frontmatter.type);
 
 	return {
 		metadata: {
-			title: frontmatter.title,
-			status:
-				s === "draft" || s === "approved" || s === "in_progress" || s === "done"
-					? s
-					: undefined,
-			created: frontmatter.created,
-			updated: frontmatter.updated,
-			type:
-				t === "feature" || t === "fix" || t === "refactor" || t === "chore"
-					? t
-					: undefined,
+			title: cast(frontmatter.title),
+			status: (s === "draft" ||
+			s === "approved" ||
+			s === "in_progress" ||
+			s === "done"
+				? s
+				: undefined) as
+				| "draft"
+				| "approved"
+				| "in_progress"
+				| "done"
+				| undefined,
+			created: cast(frontmatter.created),
+			updated: cast(frontmatter.updated),
+			type: (t === "feature" || t === "fix" || t === "refactor" || t === "chore"
+				? t
+				: undefined) as "feature" | "fix" | "refactor" | "chore" | undefined,
 		},
-		body: match[2].trim(),
+		body,
 	};
 }
 

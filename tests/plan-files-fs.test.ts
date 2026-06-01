@@ -93,9 +93,9 @@ describe("plan-files filesystem operations", () => {
 
 			const plan = readPlanFile(TEST_CWD, "test-plan");
 			expect(plan).not.toBeNull();
-			expect(plan!.metadata.title).toBe("Test Plan");
-			expect(plan!.metadata.status).toBe("approved");
-			expect(plan!.content).toContain("## Content");
+			expect(plan?.metadata.title).toBe("Test Plan");
+			expect(plan?.metadata.status).toBe("approved");
+			expect(plan?.content).toContain("## Content");
 		});
 
 		it("returns null for non-existent plan", () => {
@@ -111,9 +111,9 @@ describe("plan-files filesystem operations", () => {
 
 			const plan = readPlanFile(TEST_CWD, "minimal");
 			expect(plan).not.toBeNull();
-			expect(plan!.metadata.status).toBe("draft");
-			expect(plan!.metadata.type).toBe("feature");
-			expect(plan!.content).toBe("Content body");
+			expect(plan?.metadata.status).toBe("draft");
+			expect(plan?.metadata.type).toBe("feature");
+			expect(plan?.content).toBe("Content body");
 		});
 	});
 
@@ -180,11 +180,11 @@ describe("plan-files filesystem operations", () => {
 
 			const updated = updatePlanStatus(TEST_CWD, "my-plan", "in_progress");
 			expect(updated).not.toBeNull();
-			expect(updated!.metadata.status).toBe("in_progress");
-			expect(updated!.metadata.updated).toBeDefined();
+			expect(updated?.metadata.status).toBe("in_progress");
+			expect(updated?.metadata.updated).toBeDefined();
 
 			const plan = readPlanFile(TEST_CWD, "my-plan");
-			expect(plan!.metadata.status).toBe("in_progress");
+			expect(plan?.metadata.status).toBe("in_progress");
 		});
 
 		it("returns null for non-existent plan", () => {

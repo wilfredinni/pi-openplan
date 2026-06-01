@@ -42,6 +42,14 @@ describe("bash-safety", () => {
 		});
 		it("curl stdout", () =>
 			expect(isSafeCommand("curl https://example.com")).toBe(true));
+		it("curl HEAD", () =>
+			expect(isSafeCommand("curl -I https://example.com")).toBe(true));
+		it("curl with silent flag", () =>
+			expect(isSafeCommand("curl -s https://example.com")).toBe(true));
+		it("curl piped to grep", () =>
+			expect(isSafeCommand("curl https://example.com | grep 'hello'")).toBe(
+				true,
+			));
 		it("jq", () => expect(isSafeCommand("jq . file.json")).toBe(true));
 		it("sed -n (no -i)", () =>
 			expect(isSafeCommand("sed -n 's/foo/bar/p' file.txt")).toBe(true));
@@ -121,15 +129,53 @@ describe("bash-safety", () => {
 			));
 	});
 
-	describe("curl/wget path writes blocked", () => {
+	describe("curl/wget writes blocked", () => {
 		it("curl -o absolute path", () =>
 			expect(isSafeCommand("curl https://example.com -o /etc/passwd")).toBe(
 				false,
 			));
-		it("wget -O absolute path", () =>
+		it("curl -o relative path", () =>
+			expect(isSafeCommand("curl https://example.com -o ./output.txt")).toBe(
+				false,
+			));
+		it("curl -O remote name", () =>
+			expect(isSafeCommand("curl -O https://example.com/file.zip")).toBe(
+				false,
+			));
+		it("curl --output file", () =>
+			expect(
+				isSafeCommand("curl --output data.json https://example.com/api"),
+			).toBe(false));
+		it("curl with data (-d)", () =>
+			expect(isSafeCommand("curl -d 'key=value' https://example.com/api")).toBe(
+				false,
+			));
+		it("curl with form data (-F)", () =>
+			expect(
+				isSafeCommand("curl -F 'field=value' https://example.com/upload"),
+			).toBe(false));
+		it("curl POST (-X POST)", () =>
+			expect(isSafeCommand("curl -X POST https://example.com/api")).toBe(
+				false,
+			));
+		it("curl PUT (-X PUT)", () =>
+			expect(isSafeCommand("curl -X PUT https://example.com/api")).toBe(false));
+		it("curl DELETE (-X DELETE)", () =>
+			expect(
+				isSafeCommand("curl -X DELETE https://example.com/resource/1"),
+			).toBe(false));
+		it("curl upload (-T)", () =>
+			expect(
+				isSafeCommand("curl -T ./file.zip https://example.com/upload"),
+			).toBe(false));
+		it("wget -O file", () =>
 			expect(isSafeCommand("wget https://example.com -O /etc/hosts")).toBe(
 				false,
 			));
+		it("curl --data with value", () =>
+			expect(
+				isSafeCommand("curl --data '{key:value}' https://example.com/api"),
+			).toBe(false));
 	});
 
 	describe("unknown commands blocked (conservative gate)", () => {

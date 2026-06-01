@@ -33,6 +33,7 @@ describe("commands", () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "plan")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
 			const ctx = createMockCtx();
@@ -56,6 +57,7 @@ describe("commands", () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "plans")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
 			const ctx = createMockCtx();
@@ -82,6 +84,7 @@ describe("commands", () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
 			const ctx = createMockCtx();
@@ -95,15 +98,18 @@ describe("commands", () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
 			const ctx = createMockCtx();
 
 			await cmd.handler("nonexistent-plan", ctx);
-			expect(state.executionMode).toBe(true);
+			// Should abort and roll back execution mode
+			expect(state.executionMode).toBe(false);
+			expect(state.planModeEnabled).toBe(true);
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
 				expect.stringContaining("No plan found"),
-				"warning",
+				"error",
 			);
 		});
 	});

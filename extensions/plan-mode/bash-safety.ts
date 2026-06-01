@@ -47,9 +47,27 @@ const DESTRUCTIVE_PATTERNS = [
 	/\|\s*ruby\b/i,
 	/\|\s*node\b/i,
 
-	// Curl/wget writing to absolute paths
-	/\bcurl\s+.*-o\s+\//i,
-	/\bwget\s+.*-O\s+\//i,
+	// Curl writing to files (any path, not just absolute)
+	/\bcurl\b.*\s+-[a-zA-Z]*o\s/i,
+	/\bcurl\b.*\s+--output\s/i,
+	/\bcurl\b.*\s+-[a-zA-Z]*O\b/i,
+	/\bcurl\b.*\s+--remote-name/i,
+
+	// Curl sending data, forms, or uploading
+	/\bcurl\b.*\s+-[a-zA-Z]*d\b/i,
+	/\bcurl\b.*\s+--data/i,
+	/\bcurl\b.*\s+-[a-zA-Z]*F\b/i,
+	/\bcurl\b.*\s+--form/i,
+	/\bcurl\b.*\s+-[a-zA-Z]*T\b/i,
+	/\bcurl\b.*\s+--upload-file/i,
+
+	// Curl non-safe method override
+	/\bcurl\b.*\s+-[a-zA-Z]*X\s+(POST|PUT|DELETE|PATCH)\b/i,
+	/\bcurl\b.*\s+--request\s+(POST|PUT|DELETE|PATCH)\b/i,
+
+	// Wget writing to files (any path)
+	/\bwget\s+.*-O\s+/i,
+	/\bwget\s+.*--output-document\s+/i,
 ];
 
 const SAFE_PATTERNS = [
@@ -94,7 +112,7 @@ const SAFE_PATTERNS = [
 	/^\s*yarn\s+(list|info|why|audit)/i,
 	/^\s*node\s+--version/i,
 	/^\s*python\s+--version/i,
-	/^\s*curl\s/i,
+	/^\s*curl\s+(?!.*(?:-[a-zA-Z]*[oOdDFxXTuU]\b|--(?:output|remote-name|data|form|request|upload-file|cookie-jar|config)))/i,
 	/^\s*wget\s+-O\s*-/i,
 	/^\s*jq\b/,
 	/^\s*sed\s+-n/i,

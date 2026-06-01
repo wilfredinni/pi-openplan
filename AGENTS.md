@@ -7,13 +7,13 @@ npm install            # install dev deps (peer deps only — no runtime bundled
 npm run typecheck      # tsc --noEmit (no build step; TS files loaded directly)
 npm run lint           # biome check .
 npm run format         # biome format --write .
-npm test               # exits 0 — no tests exist yet
+npm test               # vitest — 10 test files, 204 tests
 pi -e .                # load extension locally in pi for manual testing
 ```
 
 ## What This Is
 
-A **pi extension** (v1.3.0), not a standalone app. The host is `pi` CLI. Single extension under `extensions/plan-mode/` with 9 TypeScript source files. Adds read-only plan mode, structured plan files, interactive Q&A, and phased execution tracking.
+A **pi extension** (v1.4.0), not a standalone app. The host is `pi` CLI. Single extension under `extensions/plan-mode/` with 9 TypeScript source files. Adds read-only plan mode, structured plan files, interactive Q&A, and phased execution tracking.
 
 ## Architecture (non-obvious)
 
@@ -49,6 +49,8 @@ A **pi extension** (v1.3.0), not a standalone app. The host is `pi` CLI. Single 
 release-please automates versioning from conventional commits on `main`. On release creation, a separate `publish` job runs `npm publish --provenance --access public` with NPM OIDC. Requires `publish` environment secret `NPM_TOKEN`.
 
 ## Gotchas
+
+- **Tools MUST throw errors to signal failure** — returning `{ isError: true }` from `execute()` has no effect in pi runtime. The error flag is only set when the tool throws.
 
 - **Peer dependencies must match host pi version.** Dev deps use `^0.74.0` — check pi's actual version if breakage occurs.
 - **`npm install` only installs dev deps for typechecking.** The extension has zero runtime dependencies; all APIs come from pi's core packages.

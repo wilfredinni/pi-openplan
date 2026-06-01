@@ -24,6 +24,7 @@ describe("tools", () => {
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(
 				(c: unknown[]) => (c[0] as { name: string }).name === "plan_write",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[0] as { execute: Function };
 			const ctx = createMockCtx();
 
@@ -45,29 +46,31 @@ describe("tools", () => {
 			expect(pi.sendMessage).toHaveBeenCalled();
 		});
 
-		it("handles errors gracefully", async () => {
+		it("throws on error (pi runtime sets isError for thrown errors)", async () => {
 			const toolCall = (
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(
 				(c: unknown[]) => (c[0] as { name: string }).name === "plan_write",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[0] as { execute: Function };
 
 			// Mock cwd to cause an error (invalid path)
 			const ctx = createMockCtx({ cwd: "/nonexistent/deep/path" });
 
-			const result = await toolCall.execute(
-				"id1",
-				{
-					filename: "test-plan",
-					title: "Test",
-					content: "## Content",
-				},
-				undefined,
-				undefined,
-				ctx,
-			);
-
-			expect(result.isError).toBe(true);
+			// Tool should throw — pi runtime catches thrown errors and sets isError
+			await expect(
+				toolCall.execute(
+					"id1",
+					{
+						filename: "test-plan",
+						title: "Test",
+						content: "## Content",
+					},
+					undefined,
+					undefined,
+					ctx,
+				),
+			).rejects.toThrow();
 		});
 	});
 
@@ -83,6 +86,7 @@ describe("tools", () => {
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(
 				(c: unknown[]) => (c[0] as { name: string }).name === "plan_read",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[0] as { execute: Function };
 			const ctx = createMockCtx();
 
@@ -112,6 +116,7 @@ describe("tools", () => {
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(
 				(c: unknown[]) => (c[0] as { name: string }).name === "plan_list",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[0] as { execute: Function };
 			// Use unique CWD to avoid cross-test FS pollution
 			const ctx = createMockCtx({ cwd: `/tmp/test-${testId}` });

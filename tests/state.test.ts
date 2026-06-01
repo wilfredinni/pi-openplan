@@ -9,21 +9,6 @@ import {
 	markCompletedSteps,
 } from "../extensions/plan-mode/state.ts";
 
-type PartialAssistantMessage = {
-	role: "assistant";
-	content: unknown[];
-};
-
-type PartialUserMessage = {
-	role: "user";
-	content: unknown[];
-};
-
-type PartialMsg =
-	| PartialAssistantMessage
-	| PartialUserMessage
-	| Record<string, unknown>;
-
 function makeAssistant(content: unknown[]): AssistantMessage {
 	return {
 		role: "assistant",
