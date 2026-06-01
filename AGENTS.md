@@ -60,7 +60,7 @@ release-please automates versioning from conventional commits on `main`. On rele
 - **Peer dependencies must match host pi version.** Dev deps use `^0.74.0` — check pi's actual version if breakage occurs.
 - **`npm install` only installs dev deps for typechecking.** The extension has zero runtime dependencies; all APIs come from pi's core packages.
 - **`moduleResolution: "bundler"`** means `.ts` extensions are required in imports. Don't drop them.
-- **`plan-files.ts` has its own frontmatter parser** (simple regex-based). The `parseFrontmatter` import in `tools.ts` is from `@earendil-works/pi-coding-agent` (different parser, used for stripping existing frontmatter when rendering plan content inline).
+- **`plan-files.ts` uses the SDK frontmatter parser** (`parseFrontmatter` from `@earendil-works/pi-coding-agent`) for robust YAML handling (colons, quotes, multi-line). The same import in `tools.ts` strips existing frontmatter when rendering plan content inline.
 - **Plan question tool async await pattern** — uses `ctx.ui.custom<string[][] | null>(...)` with a callback returning `{ render, invalidate, handleInput }`. The `done` callback resolves the promise. Non-interactive mode (no TUI) returns questions as text.
 
 - **Testing uses `memfs`** for in-memory filesystem mocks in `plan-files-fs.test.ts`. The `tests/helpers.ts` file provides mock factories (`createMockPi`, `createMockCtx`, `createTestState`, `createCallbacks`) used across the test suite.

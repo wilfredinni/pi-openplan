@@ -1,83 +1,50 @@
 # pi-openplan
 
-> Plan mode extension for the [pi](https://pi.dev) Coding agent — read-only exploration with structured planning, plan files, and phased execution tracking.
+> Plan mode extension for [pi](https://pi.dev) — read-only exploration, structured planning, and phased execution tracking.
 
-**pi-openplan** adds a full-featured plan mode to pi, inspired by OpenCode's plan mode workflow. Toggle it on to safely explore codebases, research approaches, write structured plans, and then execute them phase by phase with progress tracking.
+Toggle into plan mode to safely explore codebases, research approaches, write structured plans, and execute them phase by phase with progress tracking.
 
 ## Features
 
 | Feature | Description |
 |---|---|
-| 🔒 **Read-only mode** | Restricts tools to read-only (read, grep, find, ls, safe bash). Blocks destructive commands via dual-gate safety (destructive + safe whitelist). |
-| 📝 **Structured plans** | Save plans to `.pi/plans/` with YAML frontmatter (title, status, type, dates). Plans rendered inline in conversation on save. |
-| 📋 **Plan file management** | LLM-callable tools: `plan_write`, `plan_read`, `plan_list` with status filtering and execution tracking. |
-| ❓ **Interactive Q&A** | `plan_question` tool presents structured clarifying questions in a TUI overlay with options, multi-select, and free-text answers. |
-| 🎯 **Progress tracking** | Mark plan steps complete with `[DONE:n]` tags — widget shows live progress. Session resume re-scans for completed markers. |
-| ⏸️ **Pause points** | Detection of `⏸️ PAUSE` markers in plans for verification gates. Auto-pauses execution at each gate. |
-| ⚡ **Token optimization** | System prompt reduced ~63% (→455 tokens). Caveman conciseness directive cuts output ~15–20%. Brief prompt variant on turns 2+. |
-| 🔄 **State persistence** | Plan mode state, todos, and execution mode survive session restarts and `/reload`. |
+| **Read-only mode** | Blocks `edit`/`write` tools and destructive bash commands via dual-gate safety |
+| **Structured plans** | Save plans to `.pi/plans/` with YAML frontmatter (title, status, type, dates). Renders inline in conversation on save. |
+| **Plan management** | LLM tools: `plan_write`, `plan_read`, `plan_list` with status filtering |
+| **Interactive Q&A** | `plan_question` tool — TUI overlay with options, multi-select, and free-text answers |
+| **Progress tracking** | Mark steps complete with `[DONE:n]` tags — widget shows live progress. Survives restarts. |
+| **Pause points** | `⏸️ PAUSE` markers create verification gates. Auto-pauses execution at each gate. |
+| **State persistence** | Plan mode, todos, and execution mode survive session restarts and `/reload` |
 
 ## Installation
 
 ```bash
-# From npm
-pi install npm:pi-openplan
-
-# From git
-pi install git:github.com/wilfredinni/pi-openplan
-
-# Local path (development)
-pi install ./path/to/pi-openplan
-
-# Try without installing (ephemeral)
-pi -e ./path/to/pi-openplan
+pi install npm:pi-openplan          # from npm
+pi install git:github.com/wilfredinni/pi-openplan  # from git
+pi -e ./path/to/pi-openplan         # try without installing
 ```
 
 After installing, restart pi or run `/reload`.
 
 ## Quick Start
 
-```bash
-# Enable plan mode
-/plan
-
-# The LLM enters read-only mode and helps you research and plan
-# When ready, it will write a plan with plan_write
-
-# List saved plans
-/plans
-
-# Execute a saved plan (loads plan, enters execution mode, tracks progress)
-/execute_plan my-plan-name
-
-# Disable plan mode (back to full access)
-/plan
+```
+/plan                 # enable plan mode (read-only)
+/plans                # list saved plans
+/execute_plan <name>  # execute a saved plan
+/plan                 # disable plan mode (full access restored)
 ```
 
 ## Commands
 
 ### `/plan`
-
-Toggle plan mode on and off.
-
-- **On**: Tools restricted to read-only (read, grep, find, ls, bash-safe, subagent, research, plan management). Destructive bash commands blocked via dual-gate safety (must not match destructive patterns AND must match known safe patterns).
-- **Off**: Full access restored (`write` and `edit` re-enabled).
+Toggle plan mode. When enabled, tools are restricted to read-only and bash commands go through the dual-gate safety check (see [Bash Safety](#bash-safety)).
 
 ### `/plans`
-
-List all saved plans from `.pi/plans/`. Shows filename, status, title, and creation date.
+List all saved plans from `.pi/plans/` with filename, status, title, and creation date.
 
 ### `/execute_plan [plan-name]`
-
-Exit plan mode and execute a saved plan. If a plan name is given, loads the plan content, extracts phases, and sets status to `in_progress`. Sends a concise execution instruction to the agent (token-efficient — tells agent to use `plan_read(full:true)` if full content needed).
-
-```bash
-# Execute a specific plan
-/execute_plan add-rate-limiting
-
-# Execute without a plan (generic execution mode)
-/execute_plan
-```
+Exit plan mode and execute a saved plan. Loads the plan, extracts phases, and sets status to `in_progress`. If the plan is not found, execution is aborted and plan mode is restored. Run without a name to enter generic execution mode.
 
 ## Keyboard Shortcuts
 
@@ -87,105 +54,34 @@ Exit plan mode and execute a saved plan. If a plan name is given, loads the plan
 
 ## CLI Flags
 
-### `--plan`
-
-Start pi in plan mode:
-
 ```bash
-pi --plan
+pi --plan    # start pi in plan mode
 ```
 
-## Tools (LLM-callable)
+## LLM Tools
 
-These tools are registered for the LLM to use:
+These tools are registered for the agent to call during plan mode:
 
-### `plan_write`
+**`plan_write`** — Save a plan. Accepts `filename`, `title`, `content` (markdown), and optional `type` (`feature`, `fix`, `refactor`, `chore`).
 
-Save an implementation plan to `.pi/plans/`. Accepts `filename`, `title`, `content` (markdown), and optional `type` (feature, fix, refactor, chore). When saved, the plan is rendered inline in the conversation as a formatted markdown message with status, type, and date metadata.
+**`plan_read`** — Read a saved plan by filename (fuzzy match). Use `full: false` for metadata only.
 
-```json
-{
-  "filename": "add-rate-limiting",
-  "title": "Add Rate Limiting",
-  "type": "feature",
-  "content": "# Add Rate Limiting\n\n..."
-}
-```
+**`plan_list`** — List all plans, optionally filtered by `status` (`draft`, `approved`, `in_progress`, `done`).
 
-### `plan_read`
-
-Read a saved plan by filename or partial name. Supports fuzzy matching. Returns full content by default, or metadata-only when `full: false`.
-
-```json
-{
-  "filename": "add-rate-limiting",
-  "full": true
-}
-```
-
-### `plan_list`
-
-List all saved plans, optionally filtered by status (draft, approved, in_progress, done).
-
-```json
-{
-  "status": "draft"
-}
-```
-
-### `plan_question`
-
-Present interactive clarifying questions to the user with predefined options. Supports single-select, multi-select, and custom free-text answers. Batch multiple related questions in one call (max 4). Returns the user's selected answers.
-
-```json
-{
-  "questions": [
-    {
-      "question": "Which database should we use?",
-      "header": "Database",
-      "options": [
-        { "label": "PostgreSQL", "description": "Relational, ACID compliant" },
-        { "label": "SQLite", "description": "Embedded, zero config" }
-      ],
-      "multiSelect": false,
-      "custom": true
-    }
-  ]
-}
-```
-
-When called in interactive mode, the user sees a keyboard-navigable TUI overlay with numbered options, tab-based navigation for multiple questions, and an inline text editor for custom answers. In print mode, questions are returned as text for the LLM to make reasonable assumptions.
+**`plan_question`** — Present clarifying questions with options. Supports single-select, multi-select, and custom free-text. Max 4 questions, 2–4 options each. Falls back to text in non-interactive mode.
 
 ## Bash Safety
 
-Plan mode uses a **dual-gate safety system** to block destructive commands:
+Plan mode uses a **dual-gate** system to block destructive commands:
 
-1. **Destructive gate**: Blocks commands matching destructive patterns (rm, mv, npm install, git push, sudo, etc. — 30+ patterns)
-2. **Safe gate**: Only allows commands matching known safe patterns (cat, grep, ls, git status, npm list, curl, etc. — 45+ patterns)
+1. **Destructive gate** — blocks 32 patterns (`rm`, `mv`, `git push`, `npm install`, `sudo`, `curl -d`, `curl -o`, `wget -O`, pipe-to-interpreter, etc.)
+2. **Safe gate** — only allows 48 known-safe patterns (`cat`, `grep`, `ls`, `git status`, `git log`, `npm list`, `curl` (read-only), `wget -O -`, etc.)
 
-A command must pass BOTH gates to execute. Unknown commands (not in either list) are conservatively blocked.
-
-Safe commands include read-only operations plus safe package manager queries (`npm list`, `yarn info`, `pip list`), git inspection (`git status`, `git log`), and HTTP fetch tools (`curl`, `wget -O -`).
-
-## Token Optimization
-
-pi-openplan uses a two-pronged token efficiency strategy:
-
-### Input Optimization
-- System prompt reduced from ~1,221 tokens to ~455 tokens (**63% reduction**)
-- Brief ~200-token variant used on turns 2+ in the same plan-mode session
-- Conciseness directive embedded directly (no separate skill/layer overhead)
-
-### Output Optimization
-- Caveman-style conciseness directive (~85 tokens) instructs the LLM to respond tersely
-- Proven ~15–20% output reduction with zero accuracy loss
-- Auto-escape hatch: drops terseness for security warnings, destructive actions, or when asked to clarify
-
-Research basis: [caveman](https://github.com/JuliusBrussee/caveman) (65% avg output reduction), [caveman-micro](https://github.com/kuba-guzik/caveman-micro) (6-line variant outperforms full skill), [arxiv.org/abs/2604.00025](https://arxiv.org/abs/2604.00025) (brevity constraints improved accuracy by 26 points).
+A command must pass **both** gates. Unknown commands are conservatively blocked.
 
 ## Plan File Format
 
-Plans are stored as markdown files in `.pi/plans/` with YAML frontmatter:
+Plans are markdown files in `.pi/plans/` with YAML frontmatter:
 
 ```markdown
 ---
@@ -201,87 +97,47 @@ type: feature
 ...
 ```
 
-### Plan Metadata
-
-| Field | Values |
-|---|---|
-| `status` | `draft`, `approved`, `in_progress`, `done` |
-| `type` | `feature`, `fix`, `refactor`, `chore` |
-| `created` | ISO timestamp |
-| `updated` | ISO timestamp (optional) |
+**Statuses:** `draft`, `approved`, `in_progress`, `done`
+**Types:** `feature`, `fix`, `refactor`, `chore`
 
 ### Progress Tracking
 
-During execution mode, include `[DONE:n]` in your responses where `n` matches the phase number. The widget updates automatically showing completed vs remaining steps. On session resume, the extension re-scans all messages after the `/execute_plan` command for `[DONE:n]` markers to restore progress state.
+During execution, include `[DONE:n]` in responses where `n` matches the phase number. The widget updates automatically. On session resume, completed markers are re-scanned to restore state.
 
 ### Pause Points
 
-Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The extension will automatically pause and ask for confirmation before continuing to the next phase.
+Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The extension pauses and asks for confirmation before continuing.
 
 ## Plan Mode Workflow
 
-1. **Toggle on**: `/plan` or `Ctrl+Alt+P`
-2. **Explore**: Read files, search code, research approaches (all read-only, bash dual-gate safety)
-3. **Ask**: Use `plan_question` to clarify scope, constraints, and priorities
-4. **Plan**: The LLM creates a structured plan using `plan_write` with phases, verification steps, and risks — plan renders inline in conversation
-5. **Review**: The LLM presents the plan summary and stops — no prompts or choices
-6. **Execute**: Use `/execute_plan <plan-name>` to load the plan and begin phased execution
-7. **Track**: Use `[DONE:n]` to mark steps complete; the widget shows progress
-8. **Verify**: At each ⏸️ pause point, review before continuing
-9. **Complete**: When all steps are done, the extension announces completion and resets execution mode
-
-## Architecture
-
-The extension is organized into 9 focused modules under `extensions/plan-mode/`:
-
-| Module | Responsibility |
-|---|---|
-| `index.ts` | Orchestrator — extension entry point, registers all modules |
-| `state.ts` | Shared typed state (`PlanModeState`), tool sets, todo extraction, message helpers |
-| `commands.ts` | Command handlers: `/plan`, `/plans`, `/execute_plan` |
-| `events.ts` | Event handlers: bash safety, prompt injection, DONE tracking, completion/pause, session restore, context filtering |
-| `tools.ts` | Tool registrations: `plan_write`, `plan_read`, `plan_list` |
-| `question-prompt.ts` | Interactive `plan_question` tool with TUI overlay |
-| `prompts.ts` | System prompts (full + brief), conciseness directive, execution mode prompt, plan template |
-| `bash-safety.ts` | Dual-gate command safety (destructive patterns + safe patterns) |
-| `plan-files.ts` | CRUD operations for `.pi/plans/`, frontmatter parsing |
+1. **Toggle on** — `/plan` or `Ctrl+Alt+P`
+2. **Explore** — read files, search code, research approaches (read-only)
+3. **Ask** — use `plan_question` to clarify scope, constraints, priorities
+4. **Plan** — agent creates a structured plan via `plan_write` with phases, verification, risks
+5. **Review** — agent presents plan summary and stops
+6. **Execute** — `/execute_plan <plan-name>` loads plan, begins phased execution
+7. **Track** — use `[DONE:n]` to mark steps complete
+8. **Verify** — review at each `⏸️ PAUSE` gate before continuing
+9. **Complete** — all steps done; extension announces completion, resets execution mode
 
 ## Development
 
 ```bash
-# Clone
-git clone https://github.com/wilfredinni/pi-openplan
-cd pi-openplan
-
-# Install dev dependencies
-npm install
-
-# Type check
-npm run typecheck
-
-# Test locally
-pi -e .
-
-# Try a specific test
-echo "list tools" | pi -e . -p
+npm install            # install dev deps (typecheck/lint/test only)
+npm run typecheck      # tsc --noEmit
+npm run lint           # biome check .
+npm run lint:fix       # biome check --write .
+npm test               # vitest — 204 tests, 10 files
+npm run test:coverage  # vitest with v8 coverage
+pi -e .                # load extension locally
 ```
 
-## Publishing
-
-```bash
-# Build the tarball
-npm pack
-
-# Publish to npm
-npm publish
-
-# Or as scoped package
-npm publish --access public
-```
+See [AGENTS.md](./AGENTS.md) for architecture, release process, and gotchas.
 
 ## Requirements
 
 - [pi](https://pi.dev) 0.74.0 or later
+- Node.js 22+
 
 ## License
 
