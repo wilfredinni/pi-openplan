@@ -112,7 +112,7 @@ export function registerEvents(
 						content: completeContent,
 						display: true,
 					},
-					{ triggerTurn: false },
+					{ deliverAs: "nextTurn" },
 				);
 				state.executionMode = false;
 				state.todoItems = [];
@@ -137,7 +137,7 @@ export function registerEvents(
 							content: pauseContent,
 							display: true,
 						},
-						{ triggerTurn: false },
+						{ deliverAs: "nextTurn" },
 					);
 				}
 			}
@@ -172,7 +172,7 @@ export function registerEvents(
 					content: todoListContent,
 					display: true,
 				},
-				{ triggerTurn: false },
+				{ deliverAs: "nextTurn" },
 			);
 		}
 	});
@@ -208,7 +208,8 @@ export function registerEvents(
 				planModeEntry.data.enabled ?? state.planModeEnabled;
 			state.todoItems = planModeEntry.data.todos ?? state.todoItems;
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
-			state.planModeTurnCount = planModeEntry.data.turnCount ?? 0;
+			// Reset turn count — new session should use full prompt on first turn
+			state.planModeTurnCount = 0;
 		}
 
 		// On resume, re-scan messages for [DONE:n] markers
@@ -248,38 +249,54 @@ export function registerEvents(
 		callbacks.updateUI(ctx);
 	});
 
-	// ── Filter Stale Plan Context ───────────────────────────────────────
+	// ── Filter / Deduplicate Plan Context ───────────────────────────────
 
 	pi.on("context", async (event) => {
-		if (state.planModeEnabled || state.executionMode) return;
+		if (!state.planModeEnabled && !state.executionMode) {
+			// Not in plan mode: remove all plan-mode context messages
+			return {
+				messages: event.messages.filter((m) => {
+					const msg = m as AgentMessage & {
+						customType?: string;
+					};
+					if (
+						msg.customType === "plan-mode-context" ||
+						msg.customType === "plan-execution-context"
+					) {
+						return false;
+					}
+					if (msg.role !== "user") return true;
 
-		// When not in plan mode, clean up plan-mode context messages
-		return {
-			messages: event.messages.filter((m) => {
-				const msg = m as AgentMessage & {
-					customType?: string;
-				};
-				if (
-					msg.customType === "plan-mode-context" ||
-					msg.customType === "plan-execution-context"
-				) {
-					return false;
-				}
-				if (msg.role !== "user") return true;
+					const content = msg.content;
+					if (typeof content === "string") {
+						return !content.includes("[Plan Mode ACTIVE]");
+					}
+					if (Array.isArray(content)) {
+						return !content.some(
+							(c) =>
+								c.type === "text" &&
+								(c as TextContent).text?.includes("[Plan Mode ACTIVE]"),
+						);
+					}
+					return true;
+				}),
+			};
+		}
 
-				const content = msg.content;
-				if (typeof content === "string") {
-					return !content.includes("[Plan Mode ACTIVE]");
-				}
-				if (Array.isArray(content)) {
-					return !content.some(
-						(c) =>
-							c.type === "text" &&
-							(c as TextContent).text?.includes("[Plan Mode ACTIVE]"),
-					);
-				}
-				return true;
-			}),
-		};
+		// Plan mode active: deduplicate — keep only the most recent plan-mode-context message
+		let lastContextIdx = -1;
+		for (let i = event.messages.length - 1; i >= 0; i--) {
+			const msg = event.messages[i] as AgentMessage & { customType?: string };
+			if (msg.customType === "plan-mode-context") {
+				lastContextIdx = i;
+				break;
+			}
+		}
+		const filtered = event.messages.filter((_, i) => {
+			const msg = event.messages[i] as AgentMessage & { customType?: string };
+			return !(msg.customType === "plan-mode-context" && i !== lastContextIdx);
+		});
+
+		return { messages: filtered };
 	});
 }

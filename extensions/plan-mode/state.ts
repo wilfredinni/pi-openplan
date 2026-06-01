@@ -6,7 +6,6 @@
  * No circular imports — state.ts imports nothing from sibling modules.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 // ── Tool Sets ───────────────────────────────────────────────────────────
@@ -78,7 +77,14 @@ export function createInitialState(): PlanModeState {
 
 // ── Message Helpers ─────────────────────────────────────────────────────
 
-export function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
+// Minimal shape that both AgentMessage and AssistantMessage satisfy
+// (avoids cross-package type narrowing issues)
+interface MessageLike {
+	role: string;
+	content?: unknown;
+}
+
+export function isAssistantMessage(m: MessageLike): m is AssistantMessage {
 	return m.role === "assistant" && Array.isArray(m.content);
 }
 

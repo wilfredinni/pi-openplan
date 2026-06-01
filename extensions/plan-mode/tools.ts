@@ -46,78 +46,61 @@ export function registerTools(pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
-				const filename = slugify(params.filename);
-				const planType =
-					params.type === "feature" ||
-					params.type === "fix" ||
-					params.type === "refactor" ||
-					params.type === "chore"
-						? params.type
-						: "feature";
-				const metadata: PlanMetadata = {
-					title: params.title,
-					status: "draft",
-					created: new Date().toISOString(),
-					type: planType,
-				};
-				const result = createPlanFile(
-					ctx.cwd,
-					filename,
-					params.content,
-					metadata,
-				);
-				const { body: cleanBody } = parseFrontmatter(params.content);
-				const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
-				const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
-				const statusIcon =
-					metadata.status === "draft"
-						? "📝"
-						: metadata.status === "in_progress"
-							? "🔄"
-							: metadata.status === "done"
-								? "✅"
-								: "📋";
-				const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
+			const filename = slugify(params.filename);
+			const planType =
+				params.type === "feature" ||
+				params.type === "fix" ||
+				params.type === "refactor" ||
+				params.type === "chore"
+					? params.type
+					: "feature";
+			const metadata: PlanMetadata = {
+				title: params.title,
+				status: "draft",
+				created: new Date().toISOString(),
+				type: planType,
+			};
+			// Strip any existing YAML frontmatter before storage (createPlanFile wraps with fresh frontmatter)
+			const { body: cleanBody } = parseFrontmatter(params.content);
+			const result = createPlanFile(ctx.cwd, filename, cleanBody, metadata);
+			const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
+			const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
+			const statusIcon =
+				metadata.status === "draft"
+					? "📝"
+					: metadata.status === "in_progress"
+						? "🔄"
+						: metadata.status === "done"
+							? "✅"
+							: "📋";
+			const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
 
-				const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
+			const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
 
-				// Display the plan as a rendered markdown message in the conversation
-				pi.sendMessage(
+			// Display the plan as a rendered markdown message in the conversation
+			pi.sendMessage(
+				{
+					customType: "plan-content",
+					content: planMessageContent,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+
+			ctx.ui.notify(
+				`Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
+				"info",
+			);
+
+			return {
+				content: [
 					{
-						customType: "plan-content",
-						content: planMessageContent,
-						display: true,
+						type: "text",
+						text: `Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
 					},
-					{ triggerTurn: false },
-				);
-
-				ctx.ui.notify(
-					`Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
-					"info",
-				);
-
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Plan saved: ${result.path} (${metadata.type}, ${metadata.status})`,
-						},
-					],
-					details: { path: result.path, filename },
-				};
-			} catch (err: unknown) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Failed to save plan: ${err instanceof Error ? err.message : String(err)}`,
-						},
-					],
-					details: {},
-					isError: true,
-				};
-			}
+				],
+				details: { path: result.path, filename },
+			};
 		},
 	});
 
@@ -141,47 +124,34 @@ export function registerTools(pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
-				const plan = readPlanFile(ctx.cwd, params.filename);
-				if (!plan) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `No plan found matching "${params.filename}". Use plan_list to see available plans.`,
-							},
-						],
-						details: {},
-					};
-				}
-				const full = params.full !== false;
-				const planReadResponse = full
-					? `# ${plan.metadata.title}\nStatus: ${plan.metadata.status} | Created: ${plan.metadata.created} | Type: ${plan.metadata.type}\n\n${plan.content}`
-					: `# ${plan.metadata.title} [${plan.metadata.status}]\n${plan.metadata.type} · ${plan.metadata.created.slice(0, 10)}\n${plan.filename}`;
+			const plan = readPlanFile(ctx.cwd, params.filename);
+			if (!plan) {
 				return {
 					content: [
 						{
 							type: "text",
-							text: planReadResponse,
-						},
-					],
-					details: {
-						filename: plan.filename,
-						metadata: plan.metadata,
-					},
-				};
-			} catch (err: unknown) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Failed to read plan: ${err instanceof Error ? err.message : String(err)}`,
+							text: `No plan found matching "${params.filename}". Use plan_list to see available plans.`,
 						},
 					],
 					details: {},
-					isError: true,
 				};
 			}
+			const full = params.full !== false;
+			const planReadResponse = full
+				? `# ${plan.metadata.title}\nStatus: ${plan.metadata.status} | Created: ${plan.metadata.created} | Type: ${plan.metadata.type}\n\n---\n${plan.content}`
+				: `# ${plan.metadata.title} [${plan.metadata.status}]\n${plan.metadata.type} · ${plan.metadata.created.slice(0, 10)}\n${plan.filename}`;
+			return {
+				content: [
+					{
+						type: "text",
+						text: planReadResponse,
+					},
+				],
+				details: {
+					filename: plan.filename,
+					metadata: plan.metadata,
+				},
+			};
 		},
 	});
 
@@ -201,46 +171,33 @@ export function registerTools(pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			try {
-				const statusFilter =
-					params.status === "draft" ||
-					params.status === "approved" ||
-					params.status === "in_progress" ||
-					params.status === "done"
-						? params.status
-						: undefined;
-				const plans = listPlans(ctx.cwd, statusFilter);
-				if (plans.length === 0) {
-					return {
-						content: [{ type: "text", text: "No plans found." }],
-						details: { plans: [] },
-					};
-				}
-				const list = plans
-					.map(
-						(p) =>
-							`- **${p.filename}** [${p.metadata.status}] ${p.metadata.title} (${p.metadata.created.slice(0, 10)})`,
-					)
-					.join("\n");
-				const planListResponse = `# Saved Plans\n\n${list}`;
+			const statusFilter =
+				params.status === "draft" ||
+				params.status === "approved" ||
+				params.status === "in_progress" ||
+				params.status === "done"
+					? params.status
+					: undefined;
+			const plans = listPlans(ctx.cwd, statusFilter);
+			if (plans.length === 0) {
 				return {
-					content: [{ type: "text", text: planListResponse }],
-					details: {
-						plans: plans.map((p) => p.filename),
-					},
-				};
-			} catch (err: unknown) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Failed to list plans: ${err instanceof Error ? err.message : String(err)}`,
-						},
-					],
-					details: {},
-					isError: true,
+					content: [{ type: "text", text: "No plans found." }],
+					details: { plans: [] },
 				};
 			}
+			const list = plans
+				.map(
+					(p) =>
+						`- **${p.filename}** [${p.metadata.status}] ${p.metadata.title} (${p.metadata.created.slice(0, 10)})`,
+				)
+				.join("\n");
+			const planListResponse = `# Saved Plans\n\n${list}`;
+			return {
+				content: [{ type: "text", text: planListResponse }],
+				details: {
+					plans: plans.map((p) => p.filename),
+				},
+			};
 		},
 	});
 }

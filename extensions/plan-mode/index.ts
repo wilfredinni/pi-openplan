@@ -59,6 +59,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// ── UI Helpers ────────────────────────────────────────────────────
 
 	function updateUI(ctx: Parameters<PlanModeCallbacks["updateUI"]>[0]): void {
+		// Safety: no theme access in non-interactive modes
+		if (!ctx.hasUI) return;
+
 		// Footer status
 		if (state.executionMode && state.todoItems.length > 0) {
 			const completed = state.todoItems.filter((t) => t.completed).length;

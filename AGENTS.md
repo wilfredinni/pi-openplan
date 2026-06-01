@@ -2,18 +2,23 @@
 
 ## Quick Start
 
+Requires Node 22+.
+
 ```bash
 npm install            # install dev deps (peer deps only — no runtime bundled)
 npm run typecheck      # tsc --noEmit (no build step; TS files loaded directly)
 npm run lint           # biome check .
+npm run lint:fix       # biome check --write . (auto-fix)
 npm run format         # biome format --write .
-npm test               # exits 0 — no tests exist yet
+npm test               # vitest — 10 test files, 204 tests (vitest.config.ts in root)
+npm run test:watch     # vitest in watch mode
+npm run test:coverage  # vitest with v8 coverage (excludes index.ts)
 pi -e .                # load extension locally in pi for manual testing
 ```
 
 ## What This Is
 
-A **pi extension** (v1.3.0), not a standalone app. The host is `pi` CLI. Single extension under `extensions/plan-mode/` with 9 TypeScript source files. Adds read-only plan mode, structured plan files, interactive Q&A, and phased execution tracking.
+A **pi extension** (v1.4.0), not a standalone app. The host is `pi` CLI. Single extension under `extensions/plan-mode/` with 9 TypeScript source files. Adds read-only plan mode, structured plan files, interactive Q&A, and phased execution tracking.
 
 ## Architecture (non-obvious)
 
@@ -42,7 +47,7 @@ A **pi extension** (v1.3.0), not a standalone app. The host is `pi` CLI. Single 
 2. Run `npm run typecheck` to verify types
 3. Run `npm run lint` to check formatting/style
 4. Test manually with `pi -e .` (loads extension from current dir)
-5. CI runs `npm ci && npm run typecheck && npm run lint` in that order
+5. CI runs `npm ci && npm run typecheck && npm run lint && npm test` in that order
 
 ## Release
 
@@ -50,8 +55,14 @@ release-please automates versioning from conventional commits on `main`. On rele
 
 ## Gotchas
 
+- **Tools MUST throw errors to signal failure** — returning `{ isError: true }` from `execute()` has no effect in pi runtime. The error flag is only set when the tool throws.
+
 - **Peer dependencies must match host pi version.** Dev deps use `^0.74.0` — check pi's actual version if breakage occurs.
 - **`npm install` only installs dev deps for typechecking.** The extension has zero runtime dependencies; all APIs come from pi's core packages.
 - **`moduleResolution: "bundler"`** means `.ts` extensions are required in imports. Don't drop them.
-- **`plan-files.ts` has its own frontmatter parser** (simple regex-based). The `parseFrontmatter` import in `tools.ts` is from `@earendil-works/pi-coding-agent` (different parser, used for stripping existing frontmatter when rendering plan content inline).
+- **`plan-files.ts` uses the SDK frontmatter parser** (`parseFrontmatter` from `@earendil-works/pi-coding-agent`) for robust YAML handling (colons, quotes, multi-line). The same import in `tools.ts` strips existing frontmatter when rendering plan content inline.
 - **Plan question tool async await pattern** — uses `ctx.ui.custom<string[][] | null>(...)` with a callback returning `{ render, invalidate, handleInput }`. The `done` callback resolves the promise. Non-interactive mode (no TUI) returns questions as text.
+
+- **Testing uses `memfs`** for in-memory filesystem mocks in `plan-files-fs.test.ts`. The `tests/helpers.ts` file provides mock factories (`createMockPi`, `createMockCtx`, `createTestState`, `createCallbacks`) used across the test suite.
+
+- **Coverage excludes `index.ts`** — the orchestrator is intentionally excluded from coverage in `vitest.config.ts` since it only wires together modules.

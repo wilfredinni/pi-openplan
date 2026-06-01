@@ -11,6 +11,7 @@ import { listPlans, readPlanFile, updatePlanStatus } from "./plan-files.ts";
 import {
 	extractTodosFromPlan,
 	NORMAL_MODE_TOOLS,
+	PLAN_MODE_TOOLS,
 	type PlanModeCallbacks,
 	type PlanModeState,
 } from "./state.ts";
@@ -77,15 +78,33 @@ export function registerCommands(
 						}
 					} else {
 						ctx.ui.notify(
-							`No plan found matching "${planName}". Entering execution mode without a plan.`,
-							"warning",
+							`No plan found matching "${planName}". Aborting execution. Use "/plans" to list available plans.`,
+							"error",
 						);
+						// Roll back plan mode exit if we entered via this command
+						if (state.planModeEnabled === false && args?.trim()) {
+							state.planModeEnabled = true;
+							state.executionMode = false;
+							pi.setActiveTools(PLAN_MODE_TOOLS);
+						}
+						// Also roll back if we just set executionMode
+						state.executionMode = false;
+						callbacks.updateUI(ctx);
+						return;
 					}
 				} catch (err) {
 					ctx.ui.notify(
 						`Failed to read plan: ${err instanceof Error ? err.message : String(err)}`,
 						"error",
 					);
+					if (state.planModeEnabled === false && args?.trim()) {
+						state.planModeEnabled = true;
+						state.executionMode = false;
+						pi.setActiveTools(PLAN_MODE_TOOLS);
+					}
+					state.executionMode = false;
+					callbacks.updateUI(ctx);
+					return;
 				}
 			}
 

@@ -638,43 +638,22 @@ export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const input = params as unknown as PlanQuestionInput;
 
-			// Validate input
+			// Validate input — throw to signal errors (per pi docs: returning isError:true has no effect)
 			for (const q of input.questions) {
 				if (!q.question?.trim()) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: question text is empty. Each question must have non-empty text.`,
-							},
-						],
-						details: {},
-						isError: true,
-					};
+					throw new Error(
+						"Error: question text is empty. Each question must have non-empty text.",
+					);
 				}
 				if (!q.header?.trim()) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: header is empty for question "${q.question.slice(0, 40)}...". Each question needs a short header label.`,
-							},
-						],
-						details: {},
-						isError: true,
-					};
+					throw new Error(
+						`Error: header is empty for question "${q.question.slice(0, 40)}...". Each question needs a short header label.`,
+					);
 				}
 				if (q.header.length > MAX_HEADER_LENGTH) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
-							},
-						],
-						details: {},
-						isError: true,
-					};
+					throw new Error(
+						`Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
+					);
 				}
 			}
 
