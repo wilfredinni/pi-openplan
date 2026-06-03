@@ -2,10 +2,14 @@
 
 ## [1.5.1](https://github.com/wilfredinni/pi-openplan/compare/v1.5.0...v1.5.1) (2026-06-03)
 
+## Added
 
-### Bug Fixes
+- Custom plan-answers message renderer for displaying Q&A results with Markdown formatting
 
-* update @aws-sdk/* packages ([9804a01](https://github.com/wilfredinni/pi-openplan/commit/9804a019ac8000699b02cd0c894da82040115b0d))
+## Changed
+
+- Plan question tool now sends Q&A summary as formatted Markdown via pi.sendMessage() instead of returning raw text in tool output
+- Tool response content reduced to minimal "Answers recorded." with details moved to details.answers
 
 ## [1.5.0](https://github.com/wilfredinni/pi-openplan/compare/v1.4.0...v1.5.0) (2026-06-01)
 
