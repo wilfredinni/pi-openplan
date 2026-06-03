@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/wilfredinni/pi-openplan/compare/v1.5.0...v1.5.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* update @aws-sdk/* packages ([9804a01](https://github.com/wilfredinni/pi-openplan/commit/9804a019ac8000699b02cd0c894da82040115b0d))
+
 ## [1.5.0](https://github.com/wilfredinni/pi-openplan/compare/v1.4.0...v1.5.0) (2026-06-01)
 
 ### Added
