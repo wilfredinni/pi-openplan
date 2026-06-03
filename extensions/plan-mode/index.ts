@@ -48,6 +48,14 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return md;
 	});
 
+	pi.registerMessageRenderer("plan-answers", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
 	// ── CLI Flag ──────────────────────────────────────────────────────
 
 	pi.registerFlag("plan", {

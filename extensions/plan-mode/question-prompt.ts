@@ -687,19 +687,26 @@ export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 					};
 				}
 
-				const answersResponse = result
-					.map((answers, i) => {
-						const header = input.questions[i]?.header ?? `Q${i + 1}`;
-						return `${header}: ${answers.length > 0 ? answers.join(", ") : "(no preference)"}`;
-					})
-					.join("\n");
+				// Build formatted markdown summary
+				const questionsLines = input.questions.map((q, i) => {
+					const answers_i = result[i] ?? [];
+					const answerText =
+						answers_i.length > 0 ? answers_i.join(", ") : "*(no preference)*";
+					return `> ${q.question}\n→ **${answerText}**`;
+				});
+				const md = `## Q&A Complete\n\n${questionsLines.join("\n\n")}`;
+
+				pi.sendMessage(
+					{
+						customType: "plan-answers",
+						content: md,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+
 				return {
-					content: [
-						{
-							type: "text",
-							text: `User answers received:\n${answersResponse}`,
-						},
-					],
+					content: [{ type: "text", text: "Answers recorded." }],
 					details: { answers: result },
 				};
 			}
