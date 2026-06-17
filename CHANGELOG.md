@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/wilfredinni/pi-openplan/compare/v1.5.1...v1.6.0) (2026-06-17)
+
+
+### Features
+
+* new release ([6f5d4cb](https://github.com/wilfredinni/pi-openplan/commit/6f5d4cbfe641ea1d9589b7efc131b8fd5af1b86b))
+
 ## [1.5.1](https://github.com/wilfredinni/pi-openplan/compare/v1.5.0...v1.5.1) (2026-06-03)
 
 ## Added
