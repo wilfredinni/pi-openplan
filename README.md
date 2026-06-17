@@ -141,7 +141,3 @@ See [AGENTS.md](./AGENTS.md) for architecture, release process, and gotchas.
 
 - [pi](https://pi.dev) 0.74.0 or later
 - Node.js 22+
-
-## License
-
-MIT
