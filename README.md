@@ -70,7 +70,7 @@ These tools are registered for the agent to call during plan mode:
 
 **`plan_question`** — Present clarifying questions with options. Supports single-select, multi-select, and custom free-text. Max 4 questions, 2–4 options each. Falls back to text in non-interactive mode.
 
-**`plan_edit`** — Edit existing plans. Update a specific section by heading name (e.g. "Approach", "Phase 1: Setup") or replace the entire content. On full replace, the old version is preserved as a Previous Version appendix.
+**`plan_edit`** — Edit existing plans. Update a specific section by heading name (e.g. "Approach", "Phase 1: Setup") or replace the entire content. On full replace, the old version is preserved as a Previous Version.
 
 ## Bash Safety
 
