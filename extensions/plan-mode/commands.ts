@@ -67,9 +67,11 @@ export function registerCommands(
 			const planName = args?.trim();
 			if (planName) {
 				state.todoItems = [];
+				state.activePlan = planName;
 			} else {
 				// Preserve auto-extracted plan steps from conversation
 				state.todoItems = state.todoItems ?? [];
+				state.activePlan = undefined;
 			}
 
 			let planContent = "";

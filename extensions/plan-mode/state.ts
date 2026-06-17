@@ -53,6 +53,8 @@ export interface PlanModeState {
 	executionMode: boolean;
 	todoItems: TodoItem[];
 	planModeTurnCount: number;
+	/** Filename of the plan currently being executed (for live checklist sync) */
+	activePlan?: string;
 }
 
 // ── Callbacks (UI / persistence) ────────────────────────────────────────

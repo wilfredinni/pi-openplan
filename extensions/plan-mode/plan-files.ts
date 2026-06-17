@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter as parseSdkFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { TodoItem } from "./state.ts";
 
 const PLANS_DIR = ".pi/plans";
 
@@ -365,6 +366,82 @@ export function updatePlanStatus(
 		metadata: fullMetadata,
 		content: body,
 	};
+}
+
+/**
+ * Generate a "## Tasks" checklist section from extracted TodoItems.
+ * Returns empty string if the todo list is empty.
+ * Format:
+ *   ## Tasks
+ *   - [ ] 1. Phase one name
+ *   - [ ] 2. Phase two name
+ */
+export function generateTaskChecklist(todos: TodoItem[]): string {
+	if (todos.length === 0) return "";
+	const lines = todos.map((t) => `- [ ] ${t.step}. ${t.text}`);
+	return `## Tasks\n\n${lines.join("\n")}\n\n`;
+}
+
+/**
+ * Toggle checkboxes in the plan file's "## Tasks" section for completed steps.
+ * Reads the plan file, finds the Tasks section, flips [ ] → [x] for each
+ * completed step number, writes the file back with updated timestamp.
+ * Returns the updated PlanFile or null if the plan or Tasks section is missing.
+ */
+export function updateTaskChecklist(
+	cwd: string,
+	filename: string,
+	completedSteps: number[],
+): PlanFile | null {
+	const filepath = resolvePlanPath(cwd, filename);
+	if (!filepath) return null;
+
+	const raw = fs.readFileSync(filepath, "utf-8");
+	const { metadata: fm, body } = parseFrontmatter(raw);
+
+	// Find the "## Tasks" section spanning until the next "## " heading or EOF
+	const tasksRegex = /^##\s+Tasks\s*\n((?:-\s+\[[ x]\]\s+.+\n?)+)/m;
+	const tasksMatch = body.match(tasksRegex);
+	if (!tasksMatch) return null;
+
+	const originalSection = tasksMatch[0];
+	const updatedSection = originalSection.replace(
+		/^-\s+\[([ x])\]\s+(\d+)\.\s+(.+)$/gm,
+		(_match: string, check: string, step: string, text: string) => {
+			const stepNum = parseInt(step, 10);
+			// Preserve existing [x] — never uncheck; add new completions
+			const mark =
+				check === "x" || completedSteps.includes(stepNum) ? "x" : " ";
+			return `- [${mark}] ${step}. ${text}`;
+		},
+	);
+
+	const newBody = body.replace(originalSection, updatedSection);
+
+	const fullMetadata: PlanMetadata = {
+		title: fm.title ?? path.basename(filepath, ".md"),
+		status: fm.status ?? "draft",
+		created: fm.created ?? new Date().toISOString(),
+		type: fm.type ?? "feature",
+		updated: new Date().toISOString(),
+	};
+
+	const fullContent = serializeFrontmatter(fullMetadata) + newBody;
+	fs.writeFileSync(filepath, fullContent, "utf-8");
+
+	return {
+		filename: path.basename(filepath),
+		metadata: fullMetadata,
+		content: newBody,
+	};
+}
+
+/**
+ * Strip the "## Tasks" checklist section from plan content.
+ * Used to avoid duplication when re-generating the checklist.
+ */
+export function stripTaskChecklist(content: string): string {
+	return content.replace(/^##\s+Tasks\s*\n(?:-\s+\[[ x]\]\s+.+\n?)+\n*/m, "");
 }
 
 export function slugify(text: string): string {

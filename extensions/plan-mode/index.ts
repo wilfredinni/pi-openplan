@@ -116,6 +116,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			todos: state.todoItems,
 			executing: state.executionMode,
 			turnCount: state.planModeTurnCount,
+			activePlan: state.activePlan,
 		});
 	}
 
@@ -140,6 +141,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		state.planModeEnabled = false;
 		state.executionMode = false;
 		state.todoItems = [];
+		state.activePlan = undefined;
 		pi.setActiveTools(NORMAL_MODE_TOOLS);
 		ctx.ui.notify("Plan mode disabled — full access restored.", "info");
 		updateUI(ctx);

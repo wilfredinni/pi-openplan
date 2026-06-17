@@ -11,12 +11,15 @@ import { Type } from "typebox";
 import {
 	createPlanFile,
 	editPlanSection,
+	generateTaskChecklist,
 	listPlans,
 	type PlanMetadata,
 	readPlanFile,
 	replacePlanContent,
 	slugify,
+	stripTaskChecklist,
 } from "./plan-files.ts";
+import { extractTodosFromPlan } from "./state.ts";
 export function registerTools(pi: ExtensionAPI): void {
 	// ── plan_write ──────────────────────────────────────────────────────
 
@@ -64,8 +67,15 @@ export function registerTools(pi: ExtensionAPI): void {
 			};
 			// Strip any existing YAML frontmatter before storage (createPlanFile wraps with fresh frontmatter)
 			const { body: cleanBody } = parseFrontmatter(params.content);
-			const result = createPlanFile(ctx.cwd, filename, cleanBody, metadata);
-			const hasOwnTitle = /^#\s/.test(cleanBody.trimStart());
+
+			// Strip existing "## Tasks" section (avoid duplication), then regenerate from phases
+			const stripped = stripTaskChecklist(cleanBody);
+			const todos = extractTodosFromPlan(stripped);
+			const checklist = generateTaskChecklist(todos);
+			const finalContent = checklist + stripped;
+
+			const result = createPlanFile(ctx.cwd, filename, finalContent, metadata);
+			const hasOwnTitle = /^#\s/.test(stripped.trimStart());
 			const titleHeading = hasOwnTitle ? "" : `# ${params.title}\n\n`;
 			const statusIcon =
 				metadata.status === "draft"
@@ -77,7 +87,7 @@ export function registerTools(pi: ExtensionAPI): void {
 							: "📋";
 			const metaLine = `*${statusIcon} ${metadata.status} · ${metadata.type} · ${new Date(metadata.created).toLocaleDateString()}*\n`;
 
-			const planMessageContent = `${titleHeading}${metaLine}\n${cleanBody}`;
+			const planMessageContent = `${titleHeading}${metaLine}\n${finalContent}`;
 
 			// Display the plan as a rendered markdown message in the conversation
 			pi.sendMessage(
@@ -235,9 +245,23 @@ export function registerTools(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const sectionName = params.section?.trim();
 
-			const plan = sectionName
-				? editPlanSection(ctx.cwd, params.filename, sectionName, params.content)
-				: replacePlanContent(ctx.cwd, params.filename, params.content);
+			let plan: ReturnType<typeof editPlanSection | typeof replacePlanContent>;
+			if (sectionName) {
+				// Section replace — no checklist changes (per hybrid design)
+				plan = editPlanSection(
+					ctx.cwd,
+					params.filename,
+					sectionName,
+					params.content,
+				);
+			} else {
+				// Full replace — strip old checklist, regenerate from new content
+				const stripped = stripTaskChecklist(params.content);
+				const todos = extractTodosFromPlan(stripped);
+				const checklist = generateTaskChecklist(todos);
+				const finalContent = checklist + stripped;
+				plan = replacePlanContent(ctx.cwd, params.filename, finalContent);
+			}
 
 			// Display the updated plan as a rendered markdown message
 			const updatedDate = plan.metadata.updated ?? new Date().toISOString();

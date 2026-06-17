@@ -10,6 +10,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSafeCommand } from "./bash-safety.ts";
+import { updateTaskChecklist } from "./plan-files.ts";
 import {
 	EXECUTION_MODE_PROMPT,
 	PLAN_MODE_SYSTEM_PROMPT,
@@ -17,6 +18,7 @@ import {
 } from "./prompts.ts";
 import type { PlanModeCallbacks, PlanModeState } from "./state.ts";
 import {
+	extractDoneSteps,
 	extractTodosFromPlan,
 	getTextContent,
 	isAssistantMessage,
@@ -95,6 +97,16 @@ export function registerEvents(
 		const text = getTextContent(event.message);
 		if (markCompletedSteps(text, state.todoItems) > 0) {
 			callbacks.updateUI(ctx);
+
+			// Sync completed steps to the plan file's "## Tasks" checklist
+			if (state.activePlan) {
+				try {
+					const completed = extractDoneSteps(text);
+					updateTaskChecklist(ctx.cwd, state.activePlan, completed);
+				} catch {
+					// Best-effort: file sync failure must not break execution
+				}
+			}
 		}
 		callbacks.persistState();
 	});
@@ -107,6 +119,16 @@ export function registerEvents(
 		if (state.executionMode && state.todoItems.length > 0) {
 			const allDone = state.todoItems.every((t) => t.completed);
 			if (allDone) {
+				// Final sync to plan file — mark all remaining steps complete
+				if (state.activePlan) {
+					try {
+						const allSteps = state.todoItems.map((t) => t.step);
+						updateTaskChecklist(ctx.cwd, state.activePlan, allSteps);
+					} catch {
+						// Best-effort
+					}
+				}
+
 				const completedList = state.todoItems
 					.map((t) => `~~${t.text}~~`)
 					.join("\n");
@@ -204,6 +226,7 @@ export function registerEvents(
 						todos?: TodoItem[];
 						executing?: boolean;
 						turnCount?: number;
+						activePlan?: string;
 					};
 			  }
 			| undefined;
@@ -213,6 +236,7 @@ export function registerEvents(
 				planModeEntry.data.enabled ?? state.planModeEnabled;
 			state.todoItems = planModeEntry.data.todos ?? state.todoItems;
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
+			state.activePlan = planModeEntry.data.activePlan ?? state.activePlan;
 			// Reset turn count — new session should use full prompt on first turn
 			state.planModeTurnCount = 0;
 		}
