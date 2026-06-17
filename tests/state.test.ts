@@ -37,6 +37,7 @@ describe("state", () => {
 			expect(state.executionMode).toBe(false);
 			expect(state.todoItems).toEqual([]);
 			expect(state.planModeTurnCount).toBe(0);
+			expect(state.activePlan).toBeUndefined();
 		});
 	});
 

@@ -46,6 +46,73 @@ describe("tools", () => {
 			expect(pi.sendMessage).toHaveBeenCalled();
 		});
 
+		it("generates task checklist from Phase headings", async () => {
+			const toolCall = (
+				pi.registerTool as ReturnType<typeof vi.fn>
+			).mock.calls.find(
+				(c: unknown[]) => (c[0] as { name: string }).name === "plan_write",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
+			)?.[0] as { execute: Function };
+			const ctx = createMockCtx();
+
+			await toolCall.execute(
+				"id1",
+				{
+					filename: "checklist-test",
+					title: "Checklist Plan",
+					content:
+						"## Phase 1:\nSetup env\n## Phase 2:\nBuild feature\n## Phase 3:\nWrite tests",
+				},
+				undefined,
+				undefined,
+				ctx,
+			);
+
+			// Verify the saved message content contains the checklist
+			const sendMsgCall = (
+				pi.sendMessage as ReturnType<typeof vi.fn>
+			).mock.calls.find(
+				(c: unknown[]) =>
+					(c[0] as { customType: string }).customType === "plan-content",
+			);
+			const msgContent = (sendMsgCall?.[0] as { content: string }).content;
+			expect(msgContent).toContain("## Tasks");
+			expect(msgContent).toContain("- [ ] 1. Setup env");
+			expect(msgContent).toContain("- [ ] 2. Build feature");
+			expect(msgContent).toContain("- [ ] 3. Write tests");
+		});
+
+		it("does not generate checklist for content without phases", async () => {
+			const toolCall = (
+				pi.registerTool as ReturnType<typeof vi.fn>
+			).mock.calls.find(
+				(c: unknown[]) => (c[0] as { name: string }).name === "plan_write",
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
+			)?.[0] as { execute: Function };
+			const ctx = createMockCtx();
+
+			await toolCall.execute(
+				"id1",
+				{
+					filename: "no-phase-plan",
+					title: "No Phases",
+					content: "# Just a description\n\nSome content without phases.",
+				},
+				undefined,
+				undefined,
+				ctx,
+			);
+
+			const sendMsgCall = (
+				pi.sendMessage as ReturnType<typeof vi.fn>
+			).mock.calls.find(
+				(c: unknown[]) =>
+					(c[0] as { customType: string }).customType === "plan-content",
+			);
+			const msgContent = (sendMsgCall?.[0] as { content: string }).content;
+			expect(msgContent).not.toContain("## Tasks");
+		});
+
 		it("throws on error (pi runtime sets isError for thrown errors)", async () => {
 			const toolCall = (
 				pi.registerTool as ReturnType<typeof vi.fn>

@@ -14,10 +14,13 @@ vi.mock("node:fs", () => fs);
 import {
 	createPlanFile,
 	editPlanSection,
+	generateTaskChecklist,
 	listPlans,
 	readPlanFile,
 	replacePlanContent,
+	stripTaskChecklist,
 	updatePlanStatus,
+	updateTaskChecklist,
 } from "../extensions/plan-mode/plan-files.ts";
 
 const TEST_CWD = "/tmp/test";
@@ -365,6 +368,187 @@ describe("plan-files filesystem operations", () => {
 			const result = replacePlanContent(TEST_CWD, "my-plan", "## New Content");
 
 			expect(result.metadata.updated).toBeDefined();
+		});
+	});
+
+	describe("task checklist", () => {
+		describe("generateTaskChecklist", () => {
+			it("generates checklist from single todo", () => {
+				const result = generateTaskChecklist([
+					{ step: 1, text: "Setup", completed: false },
+				]);
+				expect(result).toBe("## Tasks\n\n- [ ] 1. Setup\n\n");
+			});
+
+			it("generates checklist from multiple todos", () => {
+				const result = generateTaskChecklist([
+					{ step: 1, text: "Setup", completed: false },
+					{ step: 2, text: "Build", completed: false },
+				]);
+				expect(result).toContain("- [ ] 1. Setup");
+				expect(result).toContain("- [ ] 2. Build");
+			});
+
+			it("returns empty string for empty todos", () => {
+				expect(generateTaskChecklist([])).toBe("");
+			});
+
+			it("always uses [ ] regardless of completed field", () => {
+				const result = generateTaskChecklist([
+					{ step: 1, text: "Done step", completed: true },
+				]);
+				expect(result).toContain("- [ ] 1.");
+			});
+
+			it("preserves step numbers from input", () => {
+				const result = generateTaskChecklist([
+					{ step: 3, text: "Phase three", completed: false },
+				]);
+				expect(result).toContain("- [ ] 3. Phase three");
+			});
+		});
+
+		describe("stripTaskChecklist", () => {
+			it("removes tasks section from content", () => {
+				const content =
+					"## Tasks\n\n- [ ] 1. Setup\n- [ ] 2. Build\n\n# Plan Title\n\nContent here.";
+				const result = stripTaskChecklist(content);
+				expect(result).not.toContain("## Tasks");
+				expect(result).toContain("# Plan Title");
+				expect(result).toContain("Content here.");
+			});
+
+			it("returns content unchanged when no tasks section", () => {
+				const content = "# Plan Title\n\nSome content.";
+				expect(stripTaskChecklist(content)).toBe(content);
+			});
+
+			it("handles checked items in existing checklist", () => {
+				const content =
+					"## Tasks\n\n- [x] 1. Done\n- [ ] 2. Pending\n\n# Plan Title";
+				const result = stripTaskChecklist(content);
+				expect(result).not.toContain("## Tasks");
+				expect(result).not.toContain("[x]");
+				expect(result).toContain("# Plan Title");
+			});
+		});
+
+		describe("updateTaskChecklist", () => {
+			it("toggles single checkbox to [x]", () => {
+				createPlanFile(
+					TEST_CWD,
+					"my-plan",
+					"## Tasks\n\n- [ ] 1. Setup\n- [ ] 2. Build\n\n# My Plan\n\nContent.",
+					{
+						title: "My Plan",
+						status: "in_progress",
+						created: "2026-01-01T00:00:00.000Z",
+						type: "feature",
+					},
+				);
+
+				const result = updateTaskChecklist(TEST_CWD, "my-plan", [1]);
+
+				expect(result).not.toBeNull();
+				expect(result?.content).toContain("- [x] 1. Setup");
+				expect(result?.content).toContain("- [ ] 2. Build");
+				expect(result?.metadata.updated).toBeDefined();
+			});
+
+			it("toggles multiple checkboxes", () => {
+				createPlanFile(
+					TEST_CWD,
+					"my-plan",
+					"## Tasks\n\n- [ ] 1. Setup\n- [ ] 2. Build\n- [ ] 3. Deploy\n\n# Plan",
+					{
+						title: "Plan",
+						status: "in_progress",
+						created: "2026-01-01T00:00:00.000Z",
+						type: "feature",
+					},
+				);
+
+				const result = updateTaskChecklist(TEST_CWD, "my-plan", [1, 3]);
+
+				expect(result?.content).toContain("- [x] 1. Setup");
+				expect(result?.content).toContain("- [ ] 2. Build");
+				expect(result?.content).toContain("- [x] 3. Deploy");
+			});
+
+			it("preserves already-checked items", () => {
+				createPlanFile(
+					TEST_CWD,
+					"my-plan",
+					"## Tasks\n\n- [x] 1. Setup\n- [ ] 2. Build\n\n# Plan",
+					{
+						title: "Plan",
+						status: "in_progress",
+						created: "2026-01-01T00:00:00.000Z",
+						type: "feature",
+					},
+				);
+
+				const result = updateTaskChecklist(TEST_CWD, "my-plan", [2]);
+
+				expect(result?.content).toContain("- [x] 1. Setup");
+				expect(result?.content).toContain("- [x] 2. Build");
+			});
+
+			it("returns null for non-existent plan", () => {
+				const result = updateTaskChecklist(TEST_CWD, "nonexistent", [1]);
+				expect(result).toBeNull();
+			});
+
+			it("returns null for plan without Tasks section", () => {
+				createPlanFile(TEST_CWD, "my-plan", "# My Plan\n\nNo tasks here.", {
+					title: "My Plan",
+					status: "draft",
+					created: "2026-01-01T00:00:00.000Z",
+					type: "feature",
+				});
+
+				const result = updateTaskChecklist(TEST_CWD, "my-plan", [1]);
+				expect(result).toBeNull();
+			});
+
+			it("no-op for empty completedSteps array", () => {
+				createPlanFile(
+					TEST_CWD,
+					"my-plan",
+					"## Tasks\n\n- [ ] 1. Setup\n- [ ] 2. Build\n\n# Plan",
+					{
+						title: "Plan",
+						status: "in_progress",
+						created: "2026-01-01T00:00:00.000Z",
+						type: "feature",
+					},
+				);
+
+				const result = updateTaskChecklist(TEST_CWD, "my-plan", []);
+
+				expect(result?.content).toContain("- [ ] 1. Setup");
+				expect(result?.content).toContain("- [ ] 2. Build");
+			});
+
+			it("writes changes back to file", () => {
+				createPlanFile(
+					TEST_CWD,
+					"my-plan",
+					"## Tasks\n\n- [ ] 1. Setup\n\n# Plan",
+					{
+						title: "Plan",
+						status: "in_progress",
+						created: "2026-01-01T00:00:00.000Z",
+						type: "feature",
+					},
+				);
+
+				updateTaskChecklist(TEST_CWD, "my-plan", [1]);
+
+				// Re-read the file to confirm persistence
+				const plan = readPlanFile(TEST_CWD, "my-plan");
+				expect(plan?.content).toContain("- [x] 1. Setup");
+			});
 		});
 	});
 });

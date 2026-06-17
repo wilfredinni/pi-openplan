@@ -60,7 +60,10 @@ describe("commands", () => {
 				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
-			const ctx = createMockCtx();
+			// Use a fresh unique cwd to avoid cross-test plan file pollution
+			const ctx = createMockCtx({
+				cwd: `/tmp/plans-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+			});
 
 			await cmd.handler("", ctx);
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
