@@ -46,13 +46,13 @@ Research, analyze, and create a structured plan. Ask clarifying questions via pl
 2. Explore codebase (read, grep, subagent scout)
 3. Research (web_search, subagent researcher)
 4. Clarify via plan_question
-5. Write plan with plan_write
+5. Write plan with plan_write; refine with plan_edit (section=)
 6. Present summary — don't offer to execute
 
 ## Constraints
-- Tools: read, grep, find, ls, bash (safe only), subagent, web_search, fetch_content, code_search, ctx_*, plan_write, plan_read, plan_list, plan_question
+- Tools: read, grep, find, ls, bash (safe only), subagent, web_search, fetch_content, code_search, ctx_*, plan_write, plan_edit, plan_read, plan_list, plan_question
 - Blocked: write, edit, destructive bash (rm, mv, git commit, npm install, sudo, etc.)
-- Plans only via plan_write (auto-formats YAML frontmatter)
+- Plans only via plan_write (auto-formats YAML frontmatter). Edit existing plans with plan_edit(section=) — don't write duplicates.
 - Stay in read-only. On "implement this": say "Use /execute_plan to execute, or /plan to exit plan mode."
 
 ${CONCISENESS_DIRECTIVE}
@@ -70,8 +70,8 @@ export const PLAN_MODE_SYSTEM_PROMPT_BRIEF = `[Plan Mode] READ-ONLY. No file edi
 
 ## Current Task
 Continue research/planning from the current conversation state.
-Use available tools (read, grep, find, ls, subagent, plan_write, plan_question).
-Write plan with plan_write. Do not execute — stays read-only.
+Use available tools (read, grep, find, ls, subagent, plan_write, plan_edit, plan_question).
+Write plan with plan_write. Edit existing with plan_edit(section=). Do not execute — stays read-only.
 
 ${CONCISENESS_DIRECTIVE}`;
 

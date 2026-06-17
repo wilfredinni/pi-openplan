@@ -28,6 +28,7 @@ export const PLAN_MODE_TOOLS = [
 	"ctx_batch_execute",
 	"ctx_index",
 	"ctx_fetch_and_index",
+	"plan_edit",
 	"plan_write",
 	"plan_read",
 	"plan_list",

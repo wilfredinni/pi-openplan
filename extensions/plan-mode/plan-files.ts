@@ -97,6 +97,35 @@ function serializeFrontmatter(metadata: PlanMetadata): string {
 	return `${lines.join("\n")}\n\n`;
 }
 
+/**
+ * Resolve a plan filename to a file path (exact + fuzzy match).
+ * Extracted from readPlanFile so edit functions can reuse.
+ */
+function resolvePlanPath(cwd: string, filename: string): string | null {
+	const planDir = path.join(cwd, PLANS_DIR);
+	const safeName = sanitizeFilename(filename);
+
+	let filepath = path.join(planDir, `${safeName}.md`);
+	if (!fs.existsSync(filepath)) {
+		try {
+			const files = fs.readdirSync(planDir);
+			const match = files.find(
+				(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
+			);
+			if (match) filepath = path.join(planDir, match);
+			else return null;
+		} catch {
+			return null;
+		}
+	}
+	return filepath;
+}
+
+/** Escape regex special characters in a string for literal matching. */
+function escapeRegex(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function createPlanFile(
 	cwd: string,
 	filename: string,
@@ -117,24 +146,8 @@ export function createPlanFile(
 }
 
 export function readPlanFile(cwd: string, filename: string): PlanFile | null {
-	const planDir = path.join(cwd, PLANS_DIR);
-	const safeName = sanitizeFilename(filename);
-
-	// Try exact match first
-	let filepath = path.join(planDir, `${safeName}.md`);
-	if (!fs.existsSync(filepath)) {
-		// Try fuzzy match in plans dir
-		try {
-			const files = fs.readdirSync(planDir);
-			const match = files.find(
-				(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
-			);
-			if (match) filepath = path.join(planDir, match);
-			else return null;
-		} catch {
-			return null;
-		}
-	}
+	const filepath = resolvePlanPath(cwd, filename);
+	if (!filepath) return null;
 
 	const raw = fs.readFileSync(filepath, "utf-8");
 	const { metadata, body } = parseFrontmatter(raw);
@@ -149,6 +162,121 @@ export function readPlanFile(cwd: string, filename: string): PlanFile | null {
 			updated: metadata.updated,
 		},
 		content: body,
+	};
+}
+
+/**
+ * Replace a section of a plan file by heading name.
+ * Finds "## SectionName" heading, replaces content between it and the next
+ * "## " heading (or EOF). Preserves all other sections unchanged.
+ */
+export function editPlanSection(
+	cwd: string,
+	filename: string,
+	sectionName: string,
+	newContent: string,
+): PlanFile {
+	const filepath = resolvePlanPath(cwd, filename);
+	if (!filepath) {
+		throw new Error(
+			`Plan not found: "${filename}". Use plan_list to see available plans.`,
+		);
+	}
+
+	const raw = fs.readFileSync(filepath, "utf-8");
+	const { metadata: fm, body } = parseFrontmatter(raw);
+
+	// Find the section heading (case-insensitive match on the heading text)
+	const sectionRegex = new RegExp(
+		`^##\\s+${escapeRegex(sectionName)}\\s*$`,
+		"im",
+	);
+	const match = body.match(sectionRegex);
+	if (!match || match.index === undefined) {
+		throw new Error(
+			`Section "${sectionName}" not found in plan "${filename}". ` +
+				`Available sections: ${
+					body
+						.match(/^##\s+(.+)$/gm)
+						?.map((h) => h.replace(/^##\s+/, ""))
+						.join(", ") || "none"
+				}`,
+		);
+	}
+
+	const sectionStart = match.index;
+	const afterHeading = sectionStart + match[0].length;
+
+	// Find next ## heading after this section
+	const rest = body.slice(afterHeading);
+	const nextSectionMatch = rest.match(/^##\s+/m);
+	const nextIndex = nextSectionMatch?.index;
+
+	const before = body.slice(0, sectionStart);
+	const after = nextIndex != null ? rest.slice(nextIndex) : "";
+
+	const newBody = `${before}${match[0]}
+
+${newContent.trim()}
+
+${after}`.trimEnd();
+
+	const fullMetadata: PlanMetadata = {
+		title: fm.title ?? path.basename(filepath, ".md"),
+		status: fm.status ?? "draft",
+		created: fm.created ?? new Date().toISOString(),
+		type: fm.type ?? "feature",
+		updated: new Date().toISOString(),
+	};
+
+	const fullContent = serializeFrontmatter(fullMetadata) + newBody;
+	fs.writeFileSync(filepath, fullContent, "utf-8");
+
+	return {
+		filename: path.basename(filepath),
+		metadata: fullMetadata,
+		content: newBody,
+	};
+}
+
+/**
+ * Fully replace the content of a plan file.
+ * Old content is preserved as a "Previous Version" appendix at the bottom.
+ * Updates the `updated` timestamp in frontmatter.
+ */
+export function replacePlanContent(
+	cwd: string,
+	filename: string,
+	newContent: string,
+): PlanFile {
+	const filepath = resolvePlanPath(cwd, filename);
+	if (!filepath) {
+		throw new Error(
+			`Plan not found: "${filename}". Use plan_list to see available plans.`,
+		);
+	}
+
+	const raw = fs.readFileSync(filepath, "utf-8");
+	const { metadata: fm, body: oldContent } = parseFrontmatter(raw);
+
+	const previousSection = `\n\n## Previous Version\n\n${oldContent.trim()}`;
+	const newBody = newContent.trim() + previousSection;
+
+	const fullMetadata: PlanMetadata = {
+		title: fm.title ?? path.basename(filepath, ".md"),
+		status: fm.status ?? "draft",
+		created: fm.created ?? new Date().toISOString(),
+		type: fm.type ?? "feature",
+		updated: new Date().toISOString(),
+	};
+
+	const fullContent = serializeFrontmatter(fullMetadata) + newBody;
+	fs.writeFileSync(filepath, fullContent, "utf-8");
+
+	return {
+		filename: path.basename(filepath),
+		metadata: fullMetadata,
+		content: newBody,
 	};
 }
 
