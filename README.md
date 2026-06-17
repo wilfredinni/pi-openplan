@@ -70,6 +70,8 @@ These tools are registered for the agent to call during plan mode:
 
 **`plan_question`** — Present clarifying questions with options. Supports single-select, multi-select, and custom free-text. Max 4 questions, 2–4 options each. Falls back to text in non-interactive mode.
 
+**`plan_edit`** — Edit existing plans. Update a specific section by heading name (e.g. "Approach", "Phase 1: Setup") or replace the entire content. On full replace, the old version is preserved as a Previous Version appendix.
+
 ## Bash Safety
 
 Plan mode uses a **dual-gate** system to block destructive commands:
@@ -114,11 +116,12 @@ Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The
 2. **Explore** — read files, search code, research approaches (read-only)
 3. **Ask** — use `plan_question` to clarify scope, constraints, priorities
 4. **Plan** — agent creates a structured plan via `plan_write` with phases, verification, risks
-5. **Review** — agent presents plan summary and stops
-6. **Execute** — `/execute_plan <plan-name>` loads plan, begins phased execution
-7. **Track** — use `[DONE:n]` to mark steps complete
-8. **Verify** — review at each `⏸️ PAUSE` gate before continuing
-9. **Complete** — all steps done; extension announces completion, resets execution mode
+5. **Edit** — refine the plan with `plan_edit` (update sections or full replace; previous version preserved)
+6. **Review** — agent presents plan summary and stops
+7. **Execute** — `/execute_plan <plan-name>` loads plan, begins phased execution
+8. **Track** — use `[DONE:n]` to mark steps complete
+9. **Verify** — review at each `⏸️ PAUSE` gate before continuing
+10. **Complete** — all steps done; extension announces completion, resets execution mode
 
 ## Development
 
