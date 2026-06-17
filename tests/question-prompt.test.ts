@@ -368,6 +368,71 @@ describe("PlanQuestionPrompt", () => {
 		});
 	});
 
+	describe("header truncation", () => {
+		it("truncates headers exceeding MAX_HEADER_LENGTH in tab rendering", () => {
+			const done = makeDone();
+			const longHeader = "Implementation Strategy"; // 21 chars > 16
+			const prompt = new PlanQuestionPrompt(
+				[
+					{
+						question: "Q1?",
+						header: longHeader,
+						options: [
+							{ label: "A", description: "a" },
+							{ label: "B", description: "b" },
+						],
+					},
+					{
+						question: "Q2?",
+						header: "Short",
+						options: [
+							{ label: "C", description: "c" },
+							{ label: "D", description: "d" },
+						],
+					},
+				],
+				mockTheme(),
+				done,
+			);
+
+			const allText = prompt.render(80).join("\n");
+			// Full 21-char header should NOT appear in tabs
+			expect(allText).not.toContain(longHeader);
+			// Truncated version (first 14 chars + "..") should appear
+			expect(allText).toContain("Implementation..");
+		});
+
+		it("passes through headers within MAX_HEADER_LENGTH unchanged", () => {
+			const done = makeDone();
+			const shortHeader = "Approach"; // 8 chars ≤ 16
+			const prompt = new PlanQuestionPrompt(
+				[
+					{
+						question: "Q1?",
+						header: shortHeader,
+						options: [
+							{ label: "A", description: "a" },
+							{ label: "B", description: "b" },
+						],
+					},
+					{
+						question: "Q2?",
+						header: "Other",
+						options: [
+							{ label: "C", description: "c" },
+							{ label: "D", description: "d" },
+						],
+					},
+				],
+				mockTheme(),
+				done,
+			);
+
+			const allText = prompt.render(80).join("\n");
+			expect(allText).toContain(shortHeader);
+		});
+	});
+
 	describe("invalidation", () => {
 		it("invalidate clears cache so render regenerates", () => {
 			const done = makeDone();

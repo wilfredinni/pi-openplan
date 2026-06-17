@@ -66,10 +66,15 @@ export function registerEvents(
 			};
 		}
 
-		if (state.executionMode && state.todoItems.length > 0) {
-			const remaining = state.todoItems.filter((t) => !t.completed);
-			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
-			const execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
+		if (state.executionMode) {
+			let execContent = EXECUTION_MODE_PROMPT;
+			if (state.todoItems.length > 0) {
+				const remaining = state.todoItems.filter((t) => !t.completed);
+				const todoList = remaining
+					.map((t) => `${t.step}. ${t.text}`)
+					.join("\n");
+				execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
+			}
 			return {
 				message: {
 					customType: "plan-execution-context",
@@ -253,7 +258,7 @@ export function registerEvents(
 
 	pi.on("context", async (event) => {
 		if (!state.planModeEnabled && !state.executionMode) {
-			// Not in plan mode: remove all plan-mode context messages
+			// Normal mode: remove all plan-mode context messages
 			return {
 				messages: event.messages.filter((m) => {
 					const msg = m as AgentMessage & {
@@ -283,7 +288,33 @@ export function registerEvents(
 			};
 		}
 
-		// Plan mode active: deduplicate — keep only the most recent plan-mode-context message
+		if (state.executionMode && !state.planModeEnabled) {
+			// Execution mode: remove ALL plan-mode-context (stale read-only prompt),
+			// keep only the most recent plan-execution-context
+			let lastExecIdx = -1;
+			for (let i = event.messages.length - 1; i >= 0; i--) {
+				const msg = event.messages[i] as AgentMessage & { customType?: string };
+				if (msg.customType === "plan-execution-context") {
+					lastExecIdx = i;
+					break;
+				}
+			}
+			return {
+				messages: event.messages.filter((_, i) => {
+					const msg = event.messages[i] as AgentMessage & {
+						customType?: string;
+					};
+					// Remove ALL plan-mode-context messages (stale read-only prompt)
+					if (msg.customType === "plan-mode-context") return false;
+					// Keep only the most recent plan-execution-context
+					if (msg.customType === "plan-execution-context" && i !== lastExecIdx)
+						return false;
+					return true;
+				}),
+			};
+		}
+
+		// Plan mode: deduplicate plan-mode-context, remove any plan-execution-context
 		let lastContextIdx = -1;
 		for (let i = event.messages.length - 1; i >= 0; i--) {
 			const msg = event.messages[i] as AgentMessage & { customType?: string };
@@ -294,7 +325,12 @@ export function registerEvents(
 		}
 		const filtered = event.messages.filter((_, i) => {
 			const msg = event.messages[i] as AgentMessage & { customType?: string };
-			return !(msg.customType === "plan-mode-context" && i !== lastContextIdx);
+			// Keep only the most recent plan-mode-context
+			if (msg.customType === "plan-mode-context" && i !== lastContextIdx)
+				return false;
+			// Remove any execution context (shouldn't be here in plan mode)
+			if (msg.customType === "plan-execution-context") return false;
+			return true;
 		});
 
 		return { messages: filtered };

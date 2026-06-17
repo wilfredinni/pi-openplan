@@ -13,8 +13,10 @@ vi.mock("node:fs", () => fs);
 
 import {
 	createPlanFile,
+	editPlanSection,
 	listPlans,
 	readPlanFile,
+	replacePlanContent,
 	updatePlanStatus,
 } from "../extensions/plan-mode/plan-files.ts";
 
@@ -189,6 +191,180 @@ describe("plan-files filesystem operations", () => {
 
 		it("returns null for non-existent plan", () => {
 			expect(updatePlanStatus(TEST_CWD, "nonexistent", "done")).toBeNull();
+		});
+
+		it("updates status on the correct file with fuzzy-matched filename", () => {
+			// Simulate a plan saved with date-prefixed slug (e.g. "2026-06-17-my-plan")
+			// but user refers to it as "my-plan" — updatePlanStatus must resolve
+			// to the actual filepath, not create a new file at "my-plan.md".
+			const sluggedFilename = "2026-06-17-my-plan";
+			createPlanFile(TEST_CWD, sluggedFilename, "## Content", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			// Update using the bare name (fuzzy match)
+			const updated = updatePlanStatus(TEST_CWD, "my-plan", "in_progress");
+			expect(updated).not.toBeNull();
+			expect(updated?.metadata.status).toBe("in_progress");
+
+			// The original file should still be the only one and have updated status
+			const plans = listPlans(TEST_CWD);
+			expect(plans).toHaveLength(1);
+			expect(plans[0].filename).toContain("my-plan");
+			expect(plans[0].metadata.status).toBe("in_progress");
+
+			// Reading with the bare name should return the updated plan
+			const reread = readPlanFile(TEST_CWD, "my-plan");
+			expect(reread?.metadata.status).toBe("in_progress");
+		});
+	});
+
+	describe("editPlanSection", () => {
+		it("replaces a section by heading name", () => {
+			createPlanFile(
+				TEST_CWD,
+				"my-plan",
+				"## Overview\n\nOld overview.\n\n## Phase 1\n\nPhase one content.\n\n## Risks\n\nRisk content.",
+				{
+					title: "My Plan",
+					status: "draft",
+					created: "2026-01-01T00:00:00.000Z",
+					type: "feature",
+				},
+			);
+
+			const result = editPlanSection(
+				TEST_CWD,
+				"my-plan",
+				"Phase 1",
+				"Updated phase one.",
+			);
+
+			expect(result.metadata.updated).toBeDefined();
+			expect(result.content).toContain("## Overview");
+			expect(result.content).toContain("Old overview.");
+			expect(result.content).toContain("## Phase 1");
+			expect(result.content).toContain("Updated phase one.");
+			expect(result.content).toContain("## Risks");
+			expect(result.content).toContain("Risk content.");
+			expect(result.content).not.toContain("Phase one content.");
+		});
+
+		it("replaces last section (no following heading)", () => {
+			createPlanFile(
+				TEST_CWD,
+				"my-plan",
+				"## Overview\n\nOverview content.\n\n## Notes\n\nOld notes.",
+				{
+					title: "My Plan",
+					status: "draft",
+					created: "2026-01-01T00:00:00.000Z",
+					type: "feature",
+				},
+			);
+
+			const result = editPlanSection(
+				TEST_CWD,
+				"my-plan",
+				"Notes",
+				"New notes.",
+			);
+
+			expect(result.content).toContain("## Overview");
+			expect(result.content).toContain("## Notes");
+			expect(result.content).toContain("New notes.");
+			expect(result.content).not.toContain("Old notes.");
+		});
+
+		it("throws when plan not found", () => {
+			expect(() =>
+				editPlanSection(TEST_CWD, "nonexistent", "Section", "Content"),
+			).toThrow(/Plan not found/);
+		});
+
+		it("throws when section not found", () => {
+			createPlanFile(TEST_CWD, "my-plan", "## Overview\n\nContent.", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			expect(() =>
+				editPlanSection(TEST_CWD, "my-plan", "NonExistent", "Content"),
+			).toThrow(/Section "NonExistent" not found/);
+		});
+
+		it("updates the updated timestamp", () => {
+			createPlanFile(TEST_CWD, "my-plan", "## Overview\n\nContent.", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			const before = new Date();
+			const result = editPlanSection(
+				TEST_CWD,
+				"my-plan",
+				"Overview",
+				"Updated.",
+			);
+			const after = new Date();
+
+			expect(result.metadata.updated).toBeDefined();
+			const updated = result.metadata.updated as string;
+			const updatedDate = new Date(updated);
+			expect(updatedDate.getTime()).toBeGreaterThanOrEqual(
+				before.getTime() - 1000,
+			);
+			expect(updatedDate.getTime()).toBeLessThanOrEqual(after.getTime() + 1000);
+		});
+	});
+
+	describe("replacePlanContent", () => {
+		it("replaces entire content and preserves old as Previous Version", () => {
+			createPlanFile(TEST_CWD, "my-plan", "## Old Content\n\nOld body.", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			const result = replacePlanContent(
+				TEST_CWD,
+				"my-plan",
+				"## New Content\n\nNew body.",
+			);
+
+			expect(result.content).toContain("## New Content");
+			expect(result.content).toContain("New body.");
+			expect(result.content).toContain("## Previous Version");
+			expect(result.content).toContain("## Old Content");
+			expect(result.content).toContain("Old body.");
+			expect(result.metadata.updated).toBeDefined();
+		});
+
+		it("throws when plan not found", () => {
+			expect(() =>
+				replacePlanContent(TEST_CWD, "nonexistent", "New content."),
+			).toThrow(/Plan not found/);
+		});
+
+		it("updates the updated timestamp", () => {
+			createPlanFile(TEST_CWD, "my-plan", "## Content", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			const result = replacePlanContent(TEST_CWD, "my-plan", "## New Content");
+
+			expect(result.metadata.updated).toBeDefined();
 		});
 	});
 });

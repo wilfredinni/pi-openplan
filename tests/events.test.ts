@@ -105,6 +105,32 @@ describe("events", () => {
 			const result = await handler();
 			expect(result).toBeUndefined();
 		});
+
+		it("injects execution prompt when executionMode is true (no todoItems)", async () => {
+			state.executionMode = true;
+			const handler = getHandler();
+			const result = await handler();
+			expect(result).toBeDefined();
+			expect(result.message.customType).toBe("plan-execution-context");
+			expect(result.message.content).toBe(
+				"[Executing Plan]\nFollow phases in order. Tag each with [DONE:n]. Pause at ⏸️ markers.\nWhen done, verify against plan criteria.",
+			);
+		});
+
+		it("injects execution prompt with remaining steps when todoItems exist", async () => {
+			state.executionMode = true;
+			state.todoItems = [
+				{ step: 1, text: "Phase 1", completed: false },
+				{ step: 2, text: "Phase 2", completed: true },
+			];
+			const handler = getHandler();
+			const result = await handler();
+			expect(result).toBeDefined();
+			expect(result.message.customType).toBe("plan-execution-context");
+			expect(result.message.content).toContain("Remaining steps:");
+			expect(result.message.content).toContain("1. Phase 1");
+			expect(result.message.content).not.toContain("Phase 2");
+		});
 	});
 
 	describe("turn_end (DONE tracking)", () => {
@@ -257,6 +283,77 @@ describe("events", () => {
 			expect(result).toBeDefined();
 			expect(result.messages.length).toBe(3);
 			expect(result.messages[1].customType).toBe("plan-mode-context");
+		});
+
+		it("removes ALL plan-mode-context in execution mode (stale read-only prompt)", async () => {
+			state.executionMode = true;
+			const handler = getHandler();
+			const result = await handler({
+				messages: [
+					{ role: "user", content: "hello" },
+					{
+						customType: "plan-mode-context",
+						content: "[Plan Mode] READ-ONLY",
+						display: false,
+					},
+					{ role: "user", content: "world" },
+				],
+			});
+
+			expect(result).toBeDefined();
+			expect(result.messages).toHaveLength(2);
+			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
+			expect(result.messages[1]).toEqual({ role: "user", content: "world" });
+		});
+
+		it("deduplicates plan-execution-context in execution mode", async () => {
+			state.executionMode = true;
+			const handler = getHandler();
+			const result = await handler({
+				messages: [
+					{ role: "user", content: "hello" },
+					{
+						customType: "plan-execution-context",
+						content: "old execution prompt",
+						display: false,
+					},
+					{ role: "user", content: "mid" },
+					{
+						customType: "plan-execution-context",
+						content: "latest execution prompt",
+						display: false,
+					},
+				],
+			});
+
+			expect(result).toBeDefined();
+			// 3 messages: hello, mid, latest execution context (old one removed)
+			expect(result.messages).toHaveLength(3);
+			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
+			expect(result.messages[1]).toEqual({ role: "user", content: "mid" });
+			expect(result.messages[2].customType).toBe("plan-execution-context");
+			expect(result.messages[2].content).toBe("latest execution prompt");
+		});
+
+		it("removes plan-execution-context in plan mode", async () => {
+			state.planModeEnabled = true;
+			const handler = getHandler();
+			const result = await handler({
+				messages: [
+					{ role: "user", content: "hello" },
+					{
+						customType: "plan-execution-context",
+						content: "leftover execution prompt",
+						display: false,
+					},
+					{ role: "user", content: "world" },
+				],
+			});
+
+			expect(result).toBeDefined();
+			expect(result.messages).toHaveLength(2);
+			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
+			expect(result.messages[1]).toEqual({ role: "user", content: "world" });
 		});
 	});
 });

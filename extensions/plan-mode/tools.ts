@@ -10,9 +10,11 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	createPlanFile,
+	editPlanSection,
 	listPlans,
 	type PlanMetadata,
 	readPlanFile,
+	replacePlanContent,
 	slugify,
 } from "./plan-files.ts";
 export function registerTools(pi: ExtensionAPI): void {
@@ -197,6 +199,74 @@ export function registerTools(pi: ExtensionAPI): void {
 				details: {
 					plans: plans.map((p) => p.filename),
 				},
+			};
+		},
+	});
+
+	// ── plan_edit ───────────────────────────────────────────────────────
+
+	pi.registerTool({
+		name: "plan_edit",
+		label: "Edit Plan",
+		description:
+			"Edit an existing plan in .pi/plans/. Update a specific section or replace the entire content. Old content preserved as Previous Version appendix on full replace.",
+		promptSnippet: "Edit an existing plan in .pi/plans/",
+		promptGuidelines: [
+			"Use plan_edit to update existing plans instead of writing duplicates with plan_write.",
+			"For targeted changes, provide section name to replace only that section.",
+			"Omit section to replace the entire plan content (old version preserved).",
+		],
+		parameters: Type.Object({
+			filename: Type.String({
+				description:
+					"Plan filename or partial name (fuzzy match). Must match an existing plan.",
+			}),
+			content: Type.String({
+				description:
+					"New content for the section or the full plan body (markdown).",
+			}),
+			section: Type.Optional(
+				Type.String({
+					description:
+						"Name of the section heading to replace (e.g. 'Approach', 'Phase 1: Setup'). Omit to replace entire plan content.",
+				}),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const sectionName = params.section?.trim();
+
+			const plan = sectionName
+				? editPlanSection(ctx.cwd, params.filename, sectionName, params.content)
+				: replacePlanContent(ctx.cwd, params.filename, params.content);
+
+			// Display the updated plan as a rendered markdown message
+			const updatedDate = plan.metadata.updated ?? new Date().toISOString();
+			const planMessageContent = `# ${plan.metadata.title}\n*📝 ${plan.metadata.status} · ${plan.metadata.type} · updated ${new Date(updatedDate).toLocaleDateString()}*\n\n${plan.content}`;
+
+			pi.sendMessage(
+				{
+					customType: "plan-content",
+					content: planMessageContent,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+
+			ctx.ui.notify(
+				sectionName
+					? `Plan updated: ${plan.filename} (section "${sectionName}")`
+					: `Plan updated: ${plan.filename} (full replace, previous version preserved)`,
+				"info",
+			);
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Plan updated: ${plan.filename}${sectionName ? ` (section "${sectionName}")` : " (full replace)"}`,
+					},
+				],
+				details: { filename: plan.filename, section: sectionName ?? null },
 			};
 		},
 	});

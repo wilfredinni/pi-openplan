@@ -81,7 +81,7 @@ pi-openplan/
 - **Named exports:**
   - `PlanQuestionPrompt` class — full TUI overlay component (tabs, options, multi-select, custom text editing, review tab)
   - `registerPlanQuestionTool(pi): void` — registers `plan_question` tool
-  - `MAX_QUESTIONS = 4`, `MIN_OPTIONS = 2`, `MAX_OPTIONS = 4`, `MAX_HEADER_LENGTH = 12`
+  - `MAX_QUESTIONS = 4`, `MIN_OPTIONS = 2`, `MAX_OPTIONS = 4`, `MAX_HEADER_LENGTH = 16`
   - Type exports: `QuestionOption`, `PlanQuestion`, `PlanQuestionInput`, `PlanQuestionOutput`
 - **Key logic:** Uses `ctx.ui.custom<string[][] | null>()` with `{render, invalidate, handleInput}` pattern. Falls back to text in non-interactive mode.
 
