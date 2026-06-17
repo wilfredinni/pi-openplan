@@ -94,23 +94,63 @@ describe("commands", () => {
 			expect(pi.sendUserMessage).toHaveBeenCalled();
 		});
 
-		it("handles non-existent plan name gracefully", async () => {
+		it("handles non-existent plan name from plan mode — rolls back to plan mode", async () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
 				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 				handler: Function;
 			};
+			state.planModeEnabled = true;
 			const ctx = createMockCtx();
 
 			await cmd.handler("nonexistent-plan", ctx);
-			// Should abort and roll back execution mode
+			// Should abort and roll back to plan mode
 			expect(state.executionMode).toBe(false);
 			expect(state.planModeEnabled).toBe(true);
+			expect(pi.setActiveTools).toHaveBeenLastCalledWith(
+				expect.arrayContaining(["plan_write"]),
+			);
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
 				expect.stringContaining("No plan found"),
 				"error",
 			);
+		});
+
+		it("handles non-existent plan name from normal mode — does NOT enable plan mode", async () => {
+			const cmd = (
+				pi.registerCommand as ReturnType<typeof vi.fn>
+			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
+				handler: Function;
+			};
+			state.planModeEnabled = false;
+			const ctx = createMockCtx();
+
+			await cmd.handler("nonexistent-plan", ctx);
+			// Should abort WITHOUT enabling plan mode
+			expect(state.executionMode).toBe(false);
+			expect(state.planModeEnabled).toBe(false);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("No plan found"),
+				"error",
+			);
+		});
+
+		it("preserves existing todoItems when no plan name is given", async () => {
+			const cmd = (
+				pi.registerCommand as ReturnType<typeof vi.fn>
+			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
+				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
+				handler: Function;
+			};
+			state.todoItems = [{ step: 1, text: "Setup", completed: false }];
+			const ctx = createMockCtx();
+
+			await cmd.handler("", ctx);
+			expect(state.executionMode).toBe(true);
+			expect(state.todoItems).toHaveLength(1);
+			expect(state.todoItems[0].text).toBe("Setup");
 		});
 	});
 });

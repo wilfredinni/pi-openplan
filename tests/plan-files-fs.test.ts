@@ -192,6 +192,34 @@ describe("plan-files filesystem operations", () => {
 		it("returns null for non-existent plan", () => {
 			expect(updatePlanStatus(TEST_CWD, "nonexistent", "done")).toBeNull();
 		});
+
+		it("updates status on the correct file with fuzzy-matched filename", () => {
+			// Simulate a plan saved with date-prefixed slug (e.g. "2026-06-17-my-plan")
+			// but user refers to it as "my-plan" — updatePlanStatus must resolve
+			// to the actual filepath, not create a new file at "my-plan.md".
+			const sluggedFilename = "2026-06-17-my-plan";
+			createPlanFile(TEST_CWD, sluggedFilename, "## Content", {
+				title: "My Plan",
+				status: "draft",
+				created: "2026-01-01T00:00:00.000Z",
+				type: "feature",
+			});
+
+			// Update using the bare name (fuzzy match)
+			const updated = updatePlanStatus(TEST_CWD, "my-plan", "in_progress");
+			expect(updated).not.toBeNull();
+			expect(updated?.metadata.status).toBe("in_progress");
+
+			// The original file should still be the only one and have updated status
+			const plans = listPlans(TEST_CWD);
+			expect(plans).toHaveLength(1);
+			expect(plans[0].filename).toContain("my-plan");
+			expect(plans[0].metadata.status).toBe("in_progress");
+
+			// Reading with the bare name should return the updated plan
+			const reread = readPlanFile(TEST_CWD, "my-plan");
+			expect(reread?.metadata.status).toBe("in_progress");
+		});
 	});
 
 	describe("editPlanSection", () => {

@@ -341,14 +341,30 @@ export function updatePlanStatus(
 	filename: string,
 	status: PlanMetadata["status"],
 ): PlanFile | null {
-	const plan = readPlanFile(cwd, filename);
-	if (!plan) return null;
+	// Resolve the exact filepath (supports fuzzy matching) — avoids
+	// createPlanFile recomputing a different path via sanitizeFilename.
+	const filepath = resolvePlanPath(cwd, filename);
+	if (!filepath) return null;
 
-	plan.metadata.status = status;
-	plan.metadata.updated = new Date().toISOString();
+	const raw = fs.readFileSync(filepath, "utf-8");
+	const { metadata, body } = parseFrontmatter(raw);
 
-	createPlanFile(cwd, filename, plan.content, plan.metadata);
-	return plan;
+	const fullMetadata: PlanMetadata = {
+		title: metadata.title ?? path.basename(filepath, ".md"),
+		status,
+		created: metadata.created ?? new Date().toISOString(),
+		type: metadata.type ?? "feature",
+		updated: new Date().toISOString(),
+	};
+
+	const fullContent = serializeFrontmatter(fullMetadata) + body;
+	fs.writeFileSync(filepath, fullContent, "utf-8");
+
+	return {
+		filename: path.basename(filepath),
+		metadata: fullMetadata,
+		content: body,
+	};
 }
 
 export function slugify(text: string): string {

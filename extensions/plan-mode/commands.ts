@@ -54,6 +54,8 @@ export function registerCommands(
 		description:
 			"Exit plan mode and execute a saved plan. Optionally provide a plan name as argument.",
 		handler: async (args, ctx) => {
+			const wasInPlanMode = state.planModeEnabled;
+
 			if (state.planModeEnabled) {
 				state.planModeEnabled = false;
 				state.executionMode = true;
@@ -62,9 +64,15 @@ export function registerCommands(
 				state.executionMode = true;
 			}
 
-			state.todoItems = [];
-			let planContent = "";
 			const planName = args?.trim();
+			if (planName) {
+				state.todoItems = [];
+			} else {
+				// Preserve auto-extracted plan steps from conversation
+				state.todoItems = state.todoItems ?? [];
+			}
+
+			let planContent = "";
 
 			if (planName) {
 				try {
@@ -81,14 +89,14 @@ export function registerCommands(
 							`No plan found matching "${planName}". Aborting execution. Use "/plans" to list available plans.`,
 							"error",
 						);
-						// Roll back plan mode exit if we entered via this command
-						if (state.planModeEnabled === false && args?.trim()) {
+						// Roll back only if we were in plan mode before this command
+						if (wasInPlanMode) {
 							state.planModeEnabled = true;
 							state.executionMode = false;
 							pi.setActiveTools(PLAN_MODE_TOOLS);
+						} else {
+							state.executionMode = false;
 						}
-						// Also roll back if we just set executionMode
-						state.executionMode = false;
 						callbacks.updateUI(ctx);
 						return;
 					}
@@ -97,12 +105,13 @@ export function registerCommands(
 						`Failed to read plan: ${err instanceof Error ? err.message : String(err)}`,
 						"error",
 					);
-					if (state.planModeEnabled === false && args?.trim()) {
+					if (wasInPlanMode) {
 						state.planModeEnabled = true;
 						state.executionMode = false;
 						pi.setActiveTools(PLAN_MODE_TOOLS);
+					} else {
+						state.executionMode = false;
 					}
-					state.executionMode = false;
 					callbacks.updateUI(ctx);
 					return;
 				}
