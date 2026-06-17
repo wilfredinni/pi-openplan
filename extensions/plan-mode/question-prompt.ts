@@ -20,7 +20,7 @@ import { Type } from "typebox";
 export const MAX_QUESTIONS = 4;
 export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 4;
-export const MAX_HEADER_LENGTH = 12;
+export const MAX_HEADER_LENGTH = 16;
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ export interface QuestionOption {
 export interface PlanQuestion {
 	/** Full question text to display */
 	question: string;
-	/** Short label for tab display (max 12 chars) */
+	/** Short label for tab display (max 16 chars) */
 	header: string;
 	/** 2-4 predefined options */
 	options: QuestionOption[];
@@ -379,7 +379,9 @@ export class PlanQuestionPrompt {
 				const answered = (this.answers[i]?.length ?? 0) > 0;
 				const isActive = i === this.currentTab;
 				const label =
-					q.header.length > 12 ? `${q.header.slice(0, 10)}..` : q.header;
+					q.header.length > MAX_HEADER_LENGTH
+						? `${q.header.slice(0, MAX_HEADER_LENGTH - 2)}..`
+						: q.header;
 
 				if (isActive) {
 					tabParts.push(t.fg("accent", `[${label}]`));
@@ -591,7 +593,7 @@ export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 			"Ask structured clarifying questions. Supports single-select, multi-select, and custom text. Batch up to 4 questions per call.",
 		promptSnippet: "Ask structured clarifying questions",
 		promptGuidelines: [
-			"Use plan_question instead of asking inline. Batch up to 4 questions, 2-4 options each, headers ≤12 chars.",
+			"Use plan_question instead of asking inline. Batch up to 4 questions, 2-4 options each, headers ≤16 chars.",
 		],
 		parameters: Type.Object({
 			questions: Type.Array(
@@ -600,7 +602,7 @@ export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 						description: "Question text",
 					}),
 					header: Type.String({
-						description: "Tab label, ≤12 chars",
+						description: "Tab label, ≤16 chars",
 					}),
 					options: Type.Array(
 						Type.Object({
@@ -651,9 +653,7 @@ export function registerPlanQuestionTool(pi: ExtensionAPI): void {
 					);
 				}
 				if (q.header.length > MAX_HEADER_LENGTH) {
-					throw new Error(
-						`Error: header "${q.header}" exceeds max length of ${MAX_HEADER_LENGTH} characters. Please shorten it.`,
-					);
+					q.header = q.header.slice(0, MAX_HEADER_LENGTH);
 				}
 			}
 
