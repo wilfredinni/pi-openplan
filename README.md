@@ -1,146 +1,118 @@
+[![npm](https://img.shields.io/npm/v/pi-openplan)](https://www.npmjs.com/package/pi-openplan)
+[![License](https://img.shields.io/npm/l/pi-openplan)](LICENSE)
+[![CI](https://github.com/wilfredinni/pi-openplan/actions/workflows/ci.yml/badge.svg)](https://github.com/wilfredinni/pi-openplan/actions)
+
 # pi-openplan
 
-> Plan mode extension for [pi](https://pi.dev) — read-only exploration, structured planning, and phased execution tracking.
+> Structured planning mode for [pi](https://pi.dev) — explore codebases safely,
+> write multi-phase plans, then execute them with live progress tracking.
 
-Toggle into plan mode to safely explore codebases, research approaches, write structured plans, and execute them phase by phase with progress tracking.
+Switch to read-only plan mode to research and design before you build. Write
+structured plans with phases, verification gates, and `⏸️ PAUSE` markers. Execute
+them step by step — tag `[DONE:n]` to track progress, auto-complete when all
+done. Everything survives restarts and `/reload`.
 
-## Features
-
-| Feature | Description |
-|---|---|
-| **Read-only mode** | Blocks `edit`/`write` tools and destructive bash commands via dual-gate safety |
-| **Structured plans** | Save plans to `.pi/plans/` with YAML frontmatter (title, status, type, dates). Renders inline in conversation on save. |
-| **Plan management** | LLM tools: `plan_write`, `plan_read`, `plan_list` with status filtering |
-| **Interactive Q&A** | `plan_question` tool — TUI overlay with options, multi-select, and free-text answers |
-| **Progress tracking** | Mark steps complete with `[DONE:n]` tags — widget shows live progress. Survives restarts. |
-| **Pause points** | `⏸️ PAUSE` markers create verification gates. Auto-pauses execution at each gate. |
-| **State persistence** | Plan mode, todos, and execution mode survive session restarts and `/reload` |
-
-## Installation
+## Install
 
 ```bash
-pi install npm:pi-openplan          # from npm
-pi install git:github.com/wilfredinni/pi-openplan  # from git
-pi -e ./path/to/pi-openplan         # try without installing
+pi install npm:pi-openplan                         # from npm
+pi install git:github.com/wilfredinni/pi-openplan  # from GitHub
+pi -e .                                             # try local checkout
 ```
 
-After installing, restart pi or run `/reload`.
+Requires pi 0.74+ and Node.js 22+.
 
 ## Quick Start
 
 ```
-/plan                 # enable plan mode (read-only)
-/plans                # list saved plans
-/execute_plan <name>  # execute a saved plan
-/plan                 # disable plan mode (full access restored)
+/plan                   # enter read-only plan mode (or pass --plan on startup)
+/plans                  # list saved plans
+... explore, search, ask the agent questions ...
+                        # agent saves a plan via plan_write with phases + ⏸️ gates
+/execute_plan <name>    # restore full tools, start executing
+... tag [DONE:1] as you complete each phase ...
+/plan                   # back to normal mode
 ```
 
-## Commands
+Shortcut: `Ctrl+Alt+P` toggles plan mode from anywhere.
 
-### `/plan`
-Toggle plan mode. When enabled, tools are restricted to read-only and bash commands go through the dual-gate safety check (see [Bash Safety](#bash-safety)).
+## Why Plan Mode?
 
-### `/plans`
-List all saved plans from `.pi/plans/` with filename, status, title, and creation date.
+Vanilla pi is fast. But when you need to design before coding — or guide an agent
+through a multi-step implementation — plan mode adds safety, structure, and clarity
+that vanilla sessions don't provide.
 
-### `/execute_plan [plan-name]`
-Exit plan mode and execute a saved plan. Loads the plan, extracts phases, and sets status to `in_progress`. If the plan is not found, execution is aborted and plan mode is restored. Run without a name to enter generic execution mode.
+| | Vanilla pi | pi-openplan |
+|---|---|---|
+| **Safety** | All tools always available | Read-only mode blocks edits + dual-gate bash safety |
+| **Structure** | No plan persistence | `.pi/plans/` with YAML frontmatter (title, status, type, dates) |
+| **Progress** | Manual tracking | `[DONE:n]` auto-updates a live TUI widget; re-scanned on resume |
+| **Clarity** | Inline Q&A only | `plan_question` TUI overlay with tabs, options, multi-select, free-text |
 
-## Keyboard Shortcuts
+## Features
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl+Alt+P` | Toggle plan mode |
+- **Read-only mode** — `/plan` toggles off `edit`/`write`. Bash safety blocks 32 destructive patterns, allows 48 safe ones.
+- **Structured plans** — Save to `.pi/plans/` with type (`feature`, `fix`, `refactor`, `chore`) and status (`draft`, `approved`, `in_progress`, `done`). Plans render inline in conversation on save.
+- **Plan management** — LLM tools: `plan_write`, `plan_read`, `plan_list`, `plan_edit` (section-level or full replace; previous version preserved).
+- **Interactive Q&A** — `plan_question` presents a TUI overlay with tabs, single/multi-select, and custom text input. Falls back to text in non-interactive mode.
+- **Phased execution** — `/execute_plan` loads saved plan, extracts phases. Tag `[DONE:n]` to mark steps; pauses for confirmation at `⏸️` markers. Auto-detects completion and resets state.
+- **State persistence** — Plan mode, todos, active plan, and execution state survive restarts. `[DONE:n]` markers are re-scanned from conversation history on resume.
 
-## CLI Flags
+## Workflow
 
-```bash
-pi --plan    # start pi in plan mode
+```
+Normal ──(/plan)──→ Plan (read-only) ──(/execute_plan)──→ Execute ──→ Normal
+                                                                  (all done or /plan)
 ```
 
-## LLM Tools
-
-These tools are registered for the agent to call during plan mode:
-
-**`plan_write`** — Save a plan. Accepts `filename`, `title`, `content` (markdown), and optional `type` (`feature`, `fix`, `refactor`, `chore`).
-
-**`plan_read`** — Read a saved plan by filename (fuzzy match). Use `full: false` for metadata only.
-
-**`plan_list`** — List all plans, optionally filtered by `status` (`draft`, `approved`, `in_progress`, `done`).
-
-**`plan_question`** — Present clarifying questions with options. Supports single-select, multi-select, and custom free-text. Max 4 questions, 2–4 options each. Falls back to text in non-interactive mode.
-
-**`plan_edit`** — Edit existing plans. Update a specific section by heading name (e.g. "Approach", "Phase 1: Setup") or replace the entire content. On full replace, the old version is preserved as a Previous Version.
+1. **Toggle on** — `/plan` or `Ctrl+Alt+P` (or `pi --plan`)
+2. **Explore & research** — read, grep, search safely. Destructive bash is blocked
+3. **Ask & plan** — agent uses `plan_question` for clarity, then `plan_write` to persist a plan with phases, verification, and `⏸️ PAUSE` gates. Refine with `plan_edit`
+4. **Execute** — `/execute_plan <name>` restores full tools, loads plan steps into a TUI progress widget. Run without a name for generic execution mode
+5. **Track** — tag `[DONE:n]` per phase. Extension pauses at `⏸️` gates, auto-completes when all phases are done, and resets to normal mode
 
 ## Bash Safety
 
-Plan mode uses a **dual-gate** system to block destructive commands:
-
-1. **Destructive gate** — blocks 32 patterns (`rm`, `mv`, `git push`, `npm install`, `sudo`, `curl -d`, `curl -o`, `wget -O`, pipe-to-interpreter, etc.)
-2. **Safe gate** — only allows 48 known-safe patterns (`cat`, `grep`, `ls`, `git status`, `git log`, `npm list`, `curl` (read-only), `wget -O -`, etc.)
-
-A command must pass **both** gates. Unknown commands are conservatively blocked.
+Dual-gate system: a command must **not** match 32 destructive patterns (`rm`, `mv`,
+`sudo`, `npm install`, `git push`, pipe-to-interpreter, `curl -o`/`-d`, etc.) **and**
+must match one of 48 safe patterns (`cat`, `grep`, `ls`, `git status`/`log`, `npm list`,
+`curl` without destructive flags, etc.). Unknown commands are conservatively blocked.
+See [AGENTS.md](AGENTS.md) for the full pattern list.
 
 ## Plan File Format
 
-Plans are markdown files in `.pi/plans/` with YAML frontmatter:
+Plans live in `.pi/plans/` as markdown files with YAML frontmatter:
 
 ```markdown
 ---
-title: "Feature Name"
+title: "My Feature"
 status: draft
 created: "2026-01-15T12:00:00Z"
 type: feature
 ---
 
-# Feature Name Implementation Plan
+# My Feature
 
 ## Overview
 ...
+
+## Phase 1: Setup
+`[DONE:1]` after completing.
+
+⏸️ **PAUSE** — verify before Phase 2
 ```
-
-**Statuses:** `draft`, `approved`, `in_progress`, `done`
-**Types:** `feature`, `fix`, `refactor`, `chore`
-
-### Progress Tracking
-
-During execution, include `[DONE:n]` in responses where `n` matches the phase number. The widget updates automatically. On session resume, completed markers are re-scanned to restore state.
-
-### Pause Points
-
-Include `⏸️ PAUSE` or `PAUSE` in your plan to create verification gates. The extension pauses and asks for confirmation before continuing.
-
-## Plan Mode Workflow
-
-1. **Toggle on** — `/plan` or `Ctrl+Alt+P`
-2. **Explore** — read files, search code, research approaches (read-only)
-3. **Ask** — use `plan_question` to clarify scope, constraints, priorities
-4. **Plan** — agent creates a structured plan via `plan_write` with phases, verification, risks
-5. **Edit** — refine the plan with `plan_edit` (update sections or full replace; previous version preserved)
-6. **Review** — agent presents plan summary and stops
-7. **Execute** — `/execute_plan <plan-name>` loads plan, begins phased execution
-8. **Track** — use `[DONE:n]` to mark steps complete
-9. **Verify** — review at each `⏸️ PAUSE` gate before continuing
-10. **Complete** — all steps done; extension announces completion, resets execution mode
 
 ## Development
 
 ```bash
-npm install            # install dev deps (typecheck/lint/test only)
+npm install            # dev deps only (zero runtime dependencies)
 npm run typecheck      # tsc --noEmit
 npm run lint           # biome check .
-npm run lint:fix       # biome check --write .
-npm test               # vitest — 204 tests, 10 files
-npm run test:coverage  # vitest with v8 coverage
+npm test               # vitest — 204 tests across 10 test files
 pi -e .                # load extension locally
 ```
 
-See [AGENTS.md](./AGENTS.md) for architecture, release process, and gotchas.
-
-## Requirements
-
-- [pi](https://pi.dev) 0.74.0 or later
-- Node.js 22+
+Architecture details, release process, and gotchas in [AGENTS.md](AGENTS.md).
 
 ## License
 

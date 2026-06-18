@@ -72,6 +72,24 @@ export function registerCommands(
 				// Preserve auto-extracted plan steps from conversation
 				state.todoItems = state.todoItems ?? [];
 				state.activePlan = undefined;
+
+				// Guard: no plan name AND no tracked todos — nothing to execute
+				if (state.todoItems.length === 0) {
+					ctx.ui.notify(
+						"No plan specified and no plan steps tracked. Use /execute_plan <plan-name> or write a plan first.",
+						"warning",
+					);
+					// Roll back
+					if (wasInPlanMode) {
+						state.planModeEnabled = true;
+						state.executionMode = false;
+						pi.setActiveTools(PLAN_MODE_TOOLS);
+					} else {
+						state.executionMode = false;
+					}
+					callbacks.updateUI(ctx);
+					return;
+				}
 			}
 
 			let planContent = "";

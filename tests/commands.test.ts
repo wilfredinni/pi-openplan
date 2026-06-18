@@ -83,7 +83,7 @@ describe("commands", () => {
 			);
 		});
 
-		it("enters execution mode without plan name", async () => {
+		it("warns when no plan name and no tracked todos", async () => {
 			const cmd = (
 				pi.registerCommand as ReturnType<typeof vi.fn>
 			).mock.calls.find((c: unknown[]) => c[0] === "execute_plan")?.[1] as {
@@ -93,8 +93,12 @@ describe("commands", () => {
 			const ctx = createMockCtx();
 
 			await cmd.handler("", ctx);
-			expect(state.executionMode).toBe(true);
-			expect(pi.sendUserMessage).toHaveBeenCalled();
+			expect(state.executionMode).toBe(false);
+			expect(callbacks.updateUI).toHaveBeenCalledWith(ctx);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("No plan specified"),
+				"warning",
+			);
 		});
 
 		it("handles non-existent plan name from plan mode — rolls back to plan mode", async () => {

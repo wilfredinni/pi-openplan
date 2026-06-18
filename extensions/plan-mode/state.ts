@@ -102,7 +102,9 @@ export function getTextContent(message: AssistantMessage): string {
 
 export function extractTodosFromPlan(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
-	const headerMatch = message.match(/\*{0,2}Phase\s+\d+\*{0,2}[:*-]?\s*\n/i);
+	const headerMatch = message.match(
+		/\*{0,2}Phase\s+\d+\*{0,2}[:*-]?\s*[^\n]*\n/im,
+	);
 	if (!headerMatch) {
 		// Fallback: look for "Plan:" header
 		const planMatch = message.match(/\*{0,2}Plan:\*{0,2}\s*\n/i);

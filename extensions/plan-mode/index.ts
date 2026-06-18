@@ -83,28 +83,42 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		// Widget showing plan progress
+		// Widget showing plan progress (below editor for persistent visibility)
+		// Uses function form (render/invalidate) so widget re-renders on completion.
 		if (state.executionMode && state.todoItems.length > 0) {
-			const lines = state.todoItems.map((item) => {
-				if (item.completed) {
-					return (
-						ctx.ui.theme.fg("success", "✓ ") +
-						ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
-					);
-				}
-				return (
-					ctx.ui.theme.fg("muted", "○ ") + ctx.ui.theme.fg("accent", item.text)
-				);
-			});
-			ctx.ui.setWidget("plan-todos", lines);
-		} else if (state.planModeEnabled && state.todoItems.length > 0) {
-			const lines = state.todoItems.map(
-				(item) => `${ctx.ui.theme.fg("muted", "○ ")}${item.text}`,
+			ctx.ui.setWidget(
+				"plan-todos",
+				(_tui, theme) => {
+					const lines = state.todoItems.map((item) => {
+						if (item.completed) {
+							return (
+								theme.fg("success", "✓ ") +
+								theme.fg("muted", theme.strikethrough(item.text))
+							);
+						}
+						return theme.fg("muted", "○ ") + theme.fg("accent", item.text);
+					});
+					return {
+						render: () => lines,
+						invalidate: () => {},
+					};
+				},
+				{ placement: "belowEditor" },
 			);
-			ctx.ui.setWidget("plan-todos", [
-				ctx.ui.theme.fg("warning", "── Plan Steps ──"),
-				...lines,
-			]);
+		} else if (state.planModeEnabled && state.todoItems.length > 0) {
+			ctx.ui.setWidget(
+				"plan-todos",
+				(_tui, theme) => {
+					const lines = state.todoItems.map(
+						(item) => `${theme.fg("muted", "○ ")}${item.text}`,
+					);
+					return {
+						render: () => [theme.fg("warning", "── Plan Steps ──"), ...lines],
+						invalidate: () => {},
+					};
+				},
+				{ placement: "belowEditor" },
+			);
 		} else {
 			ctx.ui.setWidget("plan-todos", undefined);
 		}
@@ -143,6 +157,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		state.todoItems = [];
 		state.activePlan = undefined;
 		pi.setActiveTools(NORMAL_MODE_TOOLS);
+
 		ctx.ui.notify("Plan mode disabled — full access restored.", "info");
 		updateUI(ctx);
 		persistState();

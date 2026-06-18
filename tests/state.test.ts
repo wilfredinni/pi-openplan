@@ -149,6 +149,22 @@ describe("state", () => {
 			expect(todos[0].text).toBe("Setup");
 		});
 
+		it("handles ### Phase 1: Description on same line", () => {
+			const plan = "### Phase 1: Create component\nDetails here.";
+			const todos = extractTodosFromPlan(plan);
+			expect(todos).toHaveLength(1);
+			expect(todos[0].text).toBe("Create component");
+			expect(todos[0].completed).toBe(false);
+		});
+
+		it("handles ## Phase 1: Description on same line", () => {
+			const plan = "## Phase 1: Setup env\n## Phase 2: Build feature";
+			const todos = extractTodosFromPlan(plan);
+			expect(todos).toHaveLength(2);
+			expect(todos[0].text).toBe("Setup env");
+			expect(todos[1].text).toBe("Build feature");
+		});
+
 		it("uses Plan: fallback when no Phase headers", () => {
 			const plan = "**Plan:**\n1. First step\n2. Second step";
 			const todos = extractTodosFromPlan(plan);

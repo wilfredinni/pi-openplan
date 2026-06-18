@@ -178,10 +178,52 @@ export function registerEvents(
 			.reverse()
 			.find(isAssistantMessage);
 		if (lastAssistant) {
-			const text = getTextContent(lastAssistant);
-			const extracted = extractTodosFromPlan(text);
-			if (extracted.length > 0) {
-				state.todoItems = extracted;
+			// 1. Check tool_use blocks first (authoritative plan content)
+			let toolTodos: TodoItem[] | null = null;
+			for (const block of lastAssistant.content) {
+				if (
+					block.type === "toolCall" &&
+					(block.name === "plan_write" || block.name === "plan_edit")
+				) {
+					const args = (
+						block as { arguments?: { content?: string; section?: string } }
+					).arguments;
+					if (args?.content) {
+						// For plan_edit, only extract on full replace (no section)
+						if (block.name === "plan_edit" && args.section) continue;
+						const extracted = extractTodosFromPlan(args.content);
+						if (extracted.length > 0) {
+							toolTodos = extracted;
+							break;
+						}
+					}
+				}
+			}
+
+			// 2. Apply findings: prefer tool input over text extraction.
+			// Preserve completed status from existing items so [DONE:n]
+			// progress survives plan edits / re-extraction.
+			if (toolTodos) {
+				for (const newItem of toolTodos) {
+					const existing = state.todoItems.find((t) => t.step === newItem.step);
+					if (existing?.completed) newItem.completed = true;
+				}
+				state.todoItems = toolTodos;
+			} else {
+				const text = getTextContent(lastAssistant);
+				const extracted = extractTodosFromPlan(text);
+				if (extracted.length > 0) {
+					for (const newItem of extracted) {
+						const existing = state.todoItems.find(
+							(t) => t.step === newItem.step,
+						);
+						if (existing?.completed) newItem.completed = true;
+					}
+					state.todoItems = extracted;
+				}
+			}
+
+			if (state.todoItems.length > 0) {
 				callbacks.updateUI(ctx);
 				callbacks.persistState();
 			}
@@ -190,7 +232,7 @@ export function registerEvents(
 		// Show plan steps if extracted
 		if (state.todoItems.length > 0) {
 			const todoListText = state.todoItems
-				.map((t, i) => `${i + 1}. ○ ${t.text}`)
+				.map((t, i) => `${i + 1}. ${t.completed ? "✓" : "○"} ${t.text}`)
 				.join("\n");
 			const todoListContent = `**Plan Steps (${state.todoItems.length}):**\n\n${todoListText}`;
 			pi.sendMessage(
