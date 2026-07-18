@@ -56,6 +56,30 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return md;
 	});
 
+	pi.registerMessageRenderer("plan-complete", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
+	pi.registerMessageRenderer("plan-pause", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
+	pi.registerMessageRenderer("plan-todo-list", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
 	// ── CLI Flag ──────────────────────────────────────────────────────
 
 	pi.registerFlag("plan", {

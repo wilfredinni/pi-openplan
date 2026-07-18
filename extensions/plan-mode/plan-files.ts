@@ -105,38 +105,36 @@ function resolvePlanPath(cwd: string, filename: string): string | null {
 	const planDir = path.join(cwd, PLANS_DIR);
 	const safeName = sanitizeFilename(filename);
 
+	// 1. Exact match
 	let filepath = path.join(planDir, `${safeName}.md`);
-	if (!fs.existsSync(filepath)) {
-		try {
-			const files = fs.readdirSync(planDir);
-			// Preference order: exact match > starts-with > includes
-			const exact = files.find((f) => {
-				const base = path.basename(f, ".md");
-				return base === safeName;
-			});
-			if (exact) {
-				filepath = path.join(planDir, exact);
-			} else {
-				const prefix = files.find((f) => {
-					const base = path.basename(f, ".md");
-					return base.startsWith(safeName) && base.endsWith(".md") === false;
-					// unconditionally: prefix match
-				});
-				if (!prefix) {
-					const fuzzy = files.find(
-						(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
-					);
-					if (fuzzy) filepath = path.join(planDir, fuzzy);
-					else return null;
-				} else {
-					filepath = path.join(planDir, prefix);
-				}
-			}
-		} catch {
-			return null;
+	if (fs.existsSync(filepath)) return filepath;
+
+	try {
+		const files = fs.readdirSync(planDir);
+
+		// 2. Starts-with match (e.g. "2026-07-18-fix-" matches "2026-07-18-fix-bugs")
+		const prefixMatch = files.find((f) => {
+			const base = path.basename(f, ".md");
+			return base.startsWith(safeName);
+		});
+		if (prefixMatch) {
+			filepath = path.join(planDir, prefixMatch);
+			return fs.existsSync(filepath) ? filepath : null;
 		}
+
+		// 3. Substring match (case-insensitive)
+		const fuzzyMatch = files.find(
+			(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
+		);
+		if (fuzzyMatch) {
+			filepath = path.join(planDir, fuzzyMatch);
+			return fs.existsSync(filepath) ? filepath : null;
+		}
+
+		return null;
+	} catch {
+		return null;
 	}
-	return filepath;
 }
 
 /** Escape regex special characters in a string for literal matching. */
@@ -327,7 +325,13 @@ export function listPlans(
 		// Read plan file directly from resolved path — readPlanFile uses
 		// sanitizeFilename which mangles subdirectory paths (e.g. "subdir/plan" → "subdir-plan").
 		const filepath = path.join(planDir, file);
-		if (!fs.existsSync(filepath)) continue;
+
+		// Guard against directories that happen to end in .md (EISDIR)
+		try {
+			if (!fs.statSync(filepath).isFile()) continue;
+		} catch {
+			continue;
+		}
 
 		const raw = fs.readFileSync(filepath, "utf-8");
 		const { metadata, body } = parseFrontmatter(raw);

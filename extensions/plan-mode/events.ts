@@ -14,7 +14,11 @@ import {
 	EXECUTION_MODE_SYSTEM_APPEND,
 	PLAN_MODE_SYSTEM_APPEND,
 } from "./prompts.ts";
-import type { PlanModeCallbacks, PlanModeState } from "./state.ts";
+import type {
+	PlanModeCallbacks,
+	PlanModeEntry,
+	PlanModeState,
+} from "./state.ts";
 import {
 	extractTodosFromPlan,
 	getTextContent,
@@ -29,13 +33,45 @@ export function registerEvents(
 	state: PlanModeState,
 	callbacks: PlanModeCallbacks,
 ): void {
-	// ── Block Dangerous Bash ────────────────────────────────────────────
+	// ── Block Dangerous Operations in Plan Mode ─────────────────────────
 
 	pi.on("tool_call", async (event) => {
-		if (!state.planModeEnabled || event.toolName !== "bash") return;
-		if (!event.input) return;
+		if (!state.planModeEnabled) return;
 
-		const command = String(event.input.command ?? "");
+		// ── Block ctx_execute / ctx_execute_file with shell language ──
+		if (
+			event.toolName === "ctx_execute" ||
+			event.toolName === "ctx_execute_file"
+		) {
+			const inputObj =
+				event.input && typeof event.input === "object"
+					? (event.input as Record<string, unknown>)
+					: null;
+			const language =
+				inputObj && typeof inputObj.language === "string"
+					? inputObj.language
+					: "";
+			if (language === "shell") {
+				return {
+					block: true,
+					reason:
+						`Plan mode: ctx_execute with shell language blocked.\n` +
+						`Shell commands bypass plan-mode safety checks.\n` +
+						`To run: exit plan mode first with /plan, then re-run.\n` +
+						`Non-shell languages (javascript, python, typescript) are allowed.`,
+				};
+			}
+			return; // non-shell ctx_execute allowed
+		}
+
+		// ── Block Dangerous Bash ──
+		if (event.toolName !== "bash") return;
+		if (!event.input || typeof event.input !== "object") return;
+
+		const inputObj = event.input as Record<string, unknown>;
+		if (typeof inputObj.command !== "string") return;
+
+		const command = inputObj.command;
 		if (!isSafeCommand(command)) {
 			return {
 				block: true,
@@ -81,6 +117,12 @@ export function registerEvents(
 
 	pi.on("agent_end", async (event, ctx) => {
 		if (!event.messages) return;
+
+		// Find last assistant message once (reused by execution + plan paths)
+		const lastAssistant = [...event.messages]
+			.reverse()
+			.find(isAssistantMessage);
+
 		// Check if execution is complete
 		if (state.executionMode && state.todoItems.length > 0) {
 			const allDone = state.todoItems.every((t) => t.completed);
@@ -106,9 +148,6 @@ export function registerEvents(
 			}
 
 			// Partial completion — check if we're at a pause point
-			const lastAssistant = [...event.messages]
-				.reverse()
-				.find(isAssistantMessage);
 			if (lastAssistant) {
 				const text = getTextContent(lastAssistant);
 				if (text.includes("⏸") || text.includes("PAUSE")) {
@@ -130,9 +169,6 @@ export function registerEvents(
 		if (!state.planModeEnabled || !ctx.hasUI) return;
 
 		// Extract plan steps from the last assistant message
-		const lastAssistant = [...event.messages]
-			.reverse()
-			.find(isAssistantMessage);
 		if (lastAssistant) {
 			const text = getTextContent(lastAssistant);
 			const extracted = extractTodosFromPlan(text);
@@ -172,10 +208,10 @@ export function registerEvents(
 		const entries = ctx.sessionManager.getEntries();
 		const planModeEntry = entries
 			.filter(
-				(e: { type: string; customType?: string }) =>
+				(e: PlanModeEntry) =>
 					e.type === "custom" && e.customType === "plan-mode-v2",
 			)
-			.pop() as
+			.pop() as unknown as
 			| {
 					data?: {
 						enabled: boolean;
@@ -197,29 +233,31 @@ export function registerEvents(
 		if (isResume && state.executionMode && state.todoItems.length > 0) {
 			let executeIndex = -1;
 			for (let i = entries.length - 1; i >= 0; i--) {
-				const entry = entries[i] as {
-					type: string;
-					customType?: string;
-				};
+				const entry = entries[i] as unknown as PlanModeEntry;
 				if (entry.customType === "plan-mode-execute") {
 					executeIndex = i;
 					break;
 				}
 			}
 
-			const messages: AssistantMessage[] = [];
-			for (let i = executeIndex + 1; i < entries.length; i++) {
-				const entry = entries[i];
-				if (
-					entry.type === "message" &&
-					"message" in entry &&
-					isAssistantMessage(entry.message as AgentMessage)
-				) {
-					messages.push(entry.message as AssistantMessage);
+			// Guard: only scan messages after the execute marker was found.
+			// Without a marker, scanning from index 0 picks up stale [DONE:n]
+			// markers from unrelated conversations.
+			if (executeIndex >= 0) {
+				const messages: AssistantMessage[] = [];
+				for (let i = executeIndex + 1; i < entries.length; i++) {
+					const entry = entries[i];
+					if (
+						entry.type === "message" &&
+						"message" in entry &&
+						isAssistantMessage(entry.message as AgentMessage)
+					) {
+						messages.push(entry.message as AssistantMessage);
+					}
 				}
+				const allText = messages.map(getTextContent).join("\n");
+				markCompletedSteps(allText, state.todoItems);
 			}
-			const allText = messages.map(getTextContent).join("\n");
-			markCompletedSteps(allText, state.todoItems);
 		}
 
 		// Apply tool restrictions
