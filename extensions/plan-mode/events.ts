@@ -11,9 +11,8 @@ import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSafeCommand } from "./bash-safety.ts";
 import {
-	EXECUTION_MODE_PROMPT,
-	PLAN_MODE_SYSTEM_PROMPT,
-	PLAN_MODE_SYSTEM_PROMPT_BRIEF,
+	EXECUTION_MODE_SYSTEM_APPEND,
+	PLAN_MODE_SYSTEM_APPEND,
 } from "./prompts.ts";
 import type { PlanModeCallbacks, PlanModeState } from "./state.ts";
 import {
@@ -50,37 +49,16 @@ export function registerEvents(
 
 	// ── Inject System Prompts ───────────────────────────────────────────
 
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (event) => {
 		if (state.planModeEnabled) {
-			state.planModeTurnCount++;
-			const prompt =
-				state.planModeTurnCount <= 1
-					? PLAN_MODE_SYSTEM_PROMPT
-					: PLAN_MODE_SYSTEM_PROMPT_BRIEF;
 			return {
-				message: {
-					customType: "plan-mode-context",
-					content: prompt,
-					display: false,
-				},
+				systemPrompt: event.systemPrompt + PLAN_MODE_SYSTEM_APPEND,
 			};
 		}
 
 		if (state.executionMode) {
-			let execContent = EXECUTION_MODE_PROMPT;
-			if (state.todoItems.length > 0) {
-				const remaining = state.todoItems.filter((t) => !t.completed);
-				const todoList = remaining
-					.map((t) => `${t.step}. ${t.text}`)
-					.join("\n");
-				execContent = `${EXECUTION_MODE_PROMPT}\n\nRemaining steps:\n${todoList}`;
-			}
 			return {
-				message: {
-					customType: "plan-execution-context",
-					content: execContent,
-					display: false,
-				},
+				systemPrompt: event.systemPrompt + EXECUTION_MODE_SYSTEM_APPEND,
 			};
 		}
 	});
@@ -203,7 +181,6 @@ export function registerEvents(
 						enabled: boolean;
 						todos?: TodoItem[];
 						executing?: boolean;
-						turnCount?: number;
 					};
 			  }
 			| undefined;
@@ -213,8 +190,6 @@ export function registerEvents(
 				planModeEntry.data.enabled ?? state.planModeEnabled;
 			state.todoItems = planModeEntry.data.todos ?? state.todoItems;
 			state.executionMode = planModeEntry.data.executing ?? state.executionMode;
-			// Reset turn count — new session should use full prompt on first turn
-			state.planModeTurnCount = 0;
 		}
 
 		// On resume, re-scan messages for [DONE:n] markers
@@ -250,6 +225,8 @@ export function registerEvents(
 		// Apply tool restrictions
 		if (state.planModeEnabled) {
 			pi.setActiveTools(PLAN_MODE_TOOLS);
+		} else if (state.executionMode) {
+			pi.setActiveTools(NORMAL_MODE_TOOLS);
 		}
 		callbacks.updateUI(ctx);
 	});
@@ -257,82 +234,33 @@ export function registerEvents(
 	// ── Filter / Deduplicate Plan Context ───────────────────────────────
 
 	pi.on("context", async (event) => {
-		if (!state.planModeEnabled && !state.executionMode) {
-			// Normal mode: remove all plan-mode context messages
-			return {
-				messages: event.messages.filter((m) => {
-					const msg = m as AgentMessage & {
-						customType?: string;
-					};
-					if (
-						msg.customType === "plan-mode-context" ||
-						msg.customType === "plan-execution-context"
-					) {
-						return false;
-					}
-					if (msg.role !== "user") return true;
-
-					const content = msg.content;
-					if (typeof content === "string") {
-						return !content.includes("[Plan Mode ACTIVE]");
-					}
-					if (Array.isArray(content)) {
-						return !content.some(
-							(c) =>
-								c.type === "text" &&
-								(c as TextContent).text?.includes("[Plan Mode ACTIVE]"),
-						);
-					}
-					return true;
-				}),
-			};
-		}
-
-		if (state.executionMode && !state.planModeEnabled) {
-			// Execution mode: remove ALL plan-mode-context (stale read-only prompt),
-			// keep only the most recent plan-execution-context
-			let lastExecIdx = -1;
-			for (let i = event.messages.length - 1; i >= 0; i--) {
-				const msg = event.messages[i] as AgentMessage & { customType?: string };
-				if (msg.customType === "plan-execution-context") {
-					lastExecIdx = i;
-					break;
+		// Strip stale plan-mode custom messages (legacy — instructions now
+		// live in stable systemPrompt blocks, not per-turn transcript messages).
+		// Also strip [Plan Mode ACTIVE] user-message markers.
+		return {
+			messages: event.messages.filter((m) => {
+				const msg = m as AgentMessage & { customType?: string };
+				if (
+					msg.customType === "plan-mode-context" ||
+					msg.customType === "plan-execution-context"
+				) {
+					return false;
 				}
-			}
-			return {
-				messages: event.messages.filter((_, i) => {
-					const msg = event.messages[i] as AgentMessage & {
-						customType?: string;
-					};
-					// Remove ALL plan-mode-context messages (stale read-only prompt)
-					if (msg.customType === "plan-mode-context") return false;
-					// Keep only the most recent plan-execution-context
-					if (msg.customType === "plan-execution-context" && i !== lastExecIdx)
-						return false;
-					return true;
-				}),
-			};
-		}
+				if (msg.role !== "user") return true;
 
-		// Plan mode: deduplicate plan-mode-context, remove any plan-execution-context
-		let lastContextIdx = -1;
-		for (let i = event.messages.length - 1; i >= 0; i--) {
-			const msg = event.messages[i] as AgentMessage & { customType?: string };
-			if (msg.customType === "plan-mode-context") {
-				lastContextIdx = i;
-				break;
-			}
-		}
-		const filtered = event.messages.filter((_, i) => {
-			const msg = event.messages[i] as AgentMessage & { customType?: string };
-			// Keep only the most recent plan-mode-context
-			if (msg.customType === "plan-mode-context" && i !== lastContextIdx)
-				return false;
-			// Remove any execution context (shouldn't be here in plan mode)
-			if (msg.customType === "plan-execution-context") return false;
-			return true;
-		});
-
-		return { messages: filtered };
+				const content = msg.content;
+				if (typeof content === "string") {
+					return !content.includes("[Plan Mode ACTIVE]");
+				}
+				if (Array.isArray(content)) {
+					return !content.some(
+						(c) =>
+							c.type === "text" &&
+							(c as TextContent).text?.includes("[Plan Mode ACTIVE]"),
+					);
+				}
+				return true;
+			}),
+		};
 	});
 }

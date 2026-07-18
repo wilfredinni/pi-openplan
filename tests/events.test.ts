@@ -79,57 +79,57 @@ describe("events", () => {
 			)?.[1] as Function;
 		}
 
-		it("injects full system prompt on first plan mode turn", async () => {
+		it("mutates systemPrompt with stable append in plan mode", async () => {
 			state.planModeEnabled = true;
 			const handler = getHandler();
-			const result = await handler();
+			const result = await handler({ systemPrompt: "BASE" });
 			expect(result).toBeDefined();
-			expect(result.message.customType).toBe("plan-mode-context");
-			expect(result.message.content).toContain("[Plan Mode]");
-			expect(state.planModeTurnCount).toBe(1);
+			expect(result.systemPrompt).toContain("BASE");
+			expect(result.systemPrompt).toContain("[Plan Mode]");
+			expect(result.systemPrompt).toContain("READ-ONLY");
+			// No message injection — instructions live in systemPrompt
+			expect(result.message).toBeUndefined();
 		});
 
-		it("injects brief prompt on second+ plan mode turn", async () => {
+		it("returns same systemPrompt on second turn (stable, no full/brief split)", async () => {
 			state.planModeEnabled = true;
-			state.planModeTurnCount = 1;
 			const handler = getHandler();
-			const result = await handler();
-			expect(result).toBeDefined();
-			expect(result.message.content).toContain("[Plan Mode]");
-			expect(result.message.content.length).toBeLessThan(1000);
-			expect(state.planModeTurnCount).toBe(2);
+			const turn1 = await handler({ systemPrompt: "BASE" });
+			const turn2 = await handler({ systemPrompt: "BASE" });
+			// Byte-identical systemPrompt mutations across turns → KV cache stable
+			expect(turn1.systemPrompt).toBe(turn2.systemPrompt);
 		});
 
 		it("does nothing when not in plan mode or execution mode", async () => {
 			const handler = getHandler();
-			const result = await handler();
+			const result = await handler({ systemPrompt: "BASE" });
 			expect(result).toBeUndefined();
 		});
 
-		it("injects execution prompt when executionMode is true (no todoItems)", async () => {
+		it("mutates systemPrompt with stable append in execution mode (no todoItems)", async () => {
 			state.executionMode = true;
 			const handler = getHandler();
-			const result = await handler();
+			const result = await handler({ systemPrompt: "BASE" });
 			expect(result).toBeDefined();
-			expect(result.message.customType).toBe("plan-execution-context");
-			expect(result.message.content).toBe(
-				"[Executing Plan]\nFollow phases in order. Tag each with [DONE:n]. Pause at ⏸️ markers.\nWhen done, verify against plan criteria.",
-			);
+			expect(result.systemPrompt).toContain("BASE");
+			expect(result.systemPrompt).toContain("[Executing Plan]");
+			expect(result.systemPrompt).toContain("[DONE:n]");
+			expect(result.message).toBeUndefined();
 		});
 
-		it("injects execution prompt with remaining steps when todoItems exist", async () => {
+		it("does NOT embed remaining steps in execution systemPrompt (KV-cache stable)", async () => {
 			state.executionMode = true;
 			state.todoItems = [
 				{ step: 1, text: "Phase 1", completed: false },
 				{ step: 2, text: "Phase 2", completed: true },
 			];
 			const handler = getHandler();
-			const result = await handler();
+			const result = await handler({ systemPrompt: "BASE" });
 			expect(result).toBeDefined();
-			expect(result.message.customType).toBe("plan-execution-context");
-			expect(result.message.content).toContain("Remaining steps:");
-			expect(result.message.content).toContain("1. Phase 1");
-			expect(result.message.content).not.toContain("Phase 2");
+			// Remaining steps MUST NOT appear in the system prompt — they'd change every turn
+			expect(result.systemPrompt).not.toContain("Phase 1");
+			expect(result.systemPrompt).not.toContain("Phase 2");
+			expect(result.systemPrompt).not.toContain("Remaining steps");
 		});
 	});
 
@@ -246,7 +246,9 @@ describe("events", () => {
 			)?.[1] as Function;
 		}
 
-		it("filters plan-mode-context messages when not in plan or execution mode", async () => {
+		it("strips plan-mode-context and plan-execution-context messages regardless of mode", async () => {
+			// These custom-type messages are legacy — instructions now live in stable systemPrompt blocks.
+			// Strip them in ALL modes for backward compatibility.
 			const handler = getHandler();
 			const result = await handler({
 				messages: [
@@ -256,6 +258,27 @@ describe("events", () => {
 						content: "prompt",
 						display: false,
 					},
+					{ role: "user", content: "world" },
+					{
+						customType: "plan-execution-context",
+						content: "exec prompt",
+						display: false,
+					},
+				],
+			});
+
+			expect(result).toBeDefined();
+			expect(result.messages).toHaveLength(2);
+			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
+			expect(result.messages[1]).toEqual({ role: "user", content: "world" });
+		});
+
+		it("strips [Plan Mode ACTIVE] from user messages", async () => {
+			const handler = getHandler();
+			const result = await handler({
+				messages: [
+					{ role: "user", content: "[Plan Mode ACTIVE] Check this" },
+					{ role: "user", content: "hello" },
 				],
 			});
 
@@ -264,96 +287,44 @@ describe("events", () => {
 			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
 		});
 
-		it("keeps plan-mode-context messages when plan mode is active", async () => {
-			state.planModeEnabled = true;
+		it("strips [Plan Mode ACTIVE] from array-content user messages", async () => {
 			const handler = getHandler();
 			const result = await handler({
 				messages: [
-					{ role: "user", content: "hello" },
 					{
-						customType: "plan-mode-context",
-						content: "prompt",
-						display: false,
+						role: "user",
+						content: [{ type: "text", text: "[Plan Mode ACTIVE] Check" }],
 					},
-					{ role: "user", content: "world" },
+					{ role: "user", content: "hello" },
 				],
 			});
 
-			// Handler filters but keeps most recent plan-mode-context
 			expect(result).toBeDefined();
-			expect(result.messages.length).toBe(3);
-			expect(result.messages[1].customType).toBe("plan-mode-context");
+			expect(result.messages).toHaveLength(1);
+			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
 		});
 
-		it("removes ALL plan-mode-context in execution mode (stale read-only prompt)", async () => {
-			state.executionMode = true;
+		it("passes through non-plan messages unchanged", async () => {
 			const handler = getHandler();
 			const result = await handler({
-				messages: [
-					{ role: "user", content: "hello" },
-					{
-						customType: "plan-mode-context",
-						content: "[Plan Mode] READ-ONLY",
-						display: false,
-					},
-					{ role: "user", content: "world" },
-				],
+				messages: [{ role: "user", content: "hello" }],
 			});
 
 			expect(result).toBeDefined();
-			expect(result.messages).toHaveLength(2);
+			expect(result.messages).toHaveLength(1);
 			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
-			expect(result.messages[1]).toEqual({ role: "user", content: "world" });
 		});
 
-		it("deduplicates plan-execution-context in execution mode", async () => {
-			state.executionMode = true;
+		it("passes through assistant messages unchanged", async () => {
 			const handler = getHandler();
 			const result = await handler({
 				messages: [
-					{ role: "user", content: "hello" },
-					{
-						customType: "plan-execution-context",
-						content: "old execution prompt",
-						display: false,
-					},
-					{ role: "user", content: "mid" },
-					{
-						customType: "plan-execution-context",
-						content: "latest execution prompt",
-						display: false,
-					},
+					{ role: "assistant", content: [{ type: "text", text: "hi" }] },
 				],
 			});
 
 			expect(result).toBeDefined();
-			// 3 messages: hello, mid, latest execution context (old one removed)
-			expect(result.messages).toHaveLength(3);
-			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
-			expect(result.messages[1]).toEqual({ role: "user", content: "mid" });
-			expect(result.messages[2].customType).toBe("plan-execution-context");
-			expect(result.messages[2].content).toBe("latest execution prompt");
-		});
-
-		it("removes plan-execution-context in plan mode", async () => {
-			state.planModeEnabled = true;
-			const handler = getHandler();
-			const result = await handler({
-				messages: [
-					{ role: "user", content: "hello" },
-					{
-						customType: "plan-execution-context",
-						content: "leftover execution prompt",
-						display: false,
-					},
-					{ role: "user", content: "world" },
-				],
-			});
-
-			expect(result).toBeDefined();
-			expect(result.messages).toHaveLength(2);
-			expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
-			expect(result.messages[1]).toEqual({ role: "user", content: "world" });
+			expect(result.messages).toHaveLength(1);
 		});
 	});
 });

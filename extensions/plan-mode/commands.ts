@@ -83,6 +83,11 @@ export function registerCommands(
 						const extracted = extractTodosFromPlan(plan.content);
 						if (extracted.length > 0) {
 							state.todoItems = extracted;
+						} else {
+							ctx.ui.notify(
+								`No phases detected in "${planName}". Execution will proceed without phase tracking.`,
+								"warning",
+							);
 						}
 					} else {
 						ctx.ui.notify(

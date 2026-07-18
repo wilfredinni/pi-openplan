@@ -52,7 +52,6 @@ export interface PlanModeState {
 	planModeEnabled: boolean;
 	executionMode: boolean;
 	todoItems: TodoItem[];
-	planModeTurnCount: number;
 }
 
 // ── Callbacks (UI / persistence) ────────────────────────────────────────
@@ -72,7 +71,6 @@ export function createInitialState(): PlanModeState {
 		planModeEnabled: false,
 		executionMode: false,
 		todoItems: [],
-		planModeTurnCount: 0,
 	};
 }
 
@@ -100,12 +98,29 @@ export function getTextContent(message: AssistantMessage): string {
 
 export function extractTodosFromPlan(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
-	const headerMatch = message.match(/\*{0,2}Phase\s+\d+\*{0,2}[:*-]?\s*\n/i);
-	if (!headerMatch) {
-		// Fallback: look for "Plan:" header
-		const planMatch = message.match(/\*{0,2}Plan:\*{0,2}\s*\n/i);
-		if (!planMatch) return items;
 
+	// Primary: extract phase headers (Phase N, Step N, Part N)
+	// Allow optional newline between the heading and the name line.
+	const phasePattern =
+		/(?:#{1,6}[^\S\n]*)?\*{0,2}(?:Phase|Step|Part)[^\S\n]+(\d+)\*{0,2}[:*-]?[^\S\n]*\n?[^\S\n]*([^\n]+)/gi;
+	for (const match of message.matchAll(phasePattern)) {
+		const num = parseInt(match[1], 10);
+		const name = match[2].trim();
+		if (name.length > 3) {
+			items.push({
+				step: num,
+				text: name.length > 60 ? `${name.slice(0, 57)}...` : name,
+				completed: false,
+			});
+		}
+	}
+
+	// If phases found, return them (skip fallbacks)
+	if (items.length > 0) return items;
+
+	// Fallback 1: "Plan:" header with numbered list
+	const planMatch = message.match(/\*{0,2}Plan:\*{0,2}[ \t]*\n/i);
+	if (planMatch) {
 		const planSection = message.slice(
 			message.indexOf(planMatch[0]) + planMatch[0].length,
 		);
@@ -126,36 +141,19 @@ export function extractTodosFromPlan(message: string): TodoItem[] {
 		return items;
 	}
 
-	// Extract phases from the plan
-	const phasePattern =
-		/(?:###?\s*)?\*{0,2}Phase\s+(\d+)\*{0,2}[:*-]?\s*([^\n]+)/gi;
-	for (const match of message.matchAll(phasePattern)) {
-		const num = parseInt(match[1], 10);
-		const name = match[2].trim();
-		if (name.length > 3) {
-			items.push({
-				step: num,
-				text: name.length > 60 ? `${name.slice(0, 57)}...` : name,
-				completed: false,
-			});
-		}
-	}
-
-	// If no phases found, try numbered list under "Changes" or "Implementation"
-	if (items.length === 0) {
-		const changesMatch = message.match(
-			/(?:###?\s*)?(?:Changes|Implementation|Approach)[:*]?\s*\n/i,
+	// Fallback 2: Any numbered list under Changes/Implementation/Approach/Tasks/Steps
+	const changesMatch = message.match(
+		/(?:###?\s*)?(?:Changes|Implementation|Approach|Tasks|Steps)[:*]?\s*\n/i,
+	);
+	if (changesMatch) {
+		const section = message.slice(
+			message.indexOf(changesMatch[0]) + changesMatch[0].length,
 		);
-		if (changesMatch) {
-			const section = message.slice(
-				message.indexOf(changesMatch[0]) + changesMatch[0].length,
-			);
-			const numPattern = /^\s*(\d+)[.)]\s+([^\n]+)/gm;
-			for (const match of section.matchAll(numPattern)) {
-				const text = match[2].trim();
-				if (text.length > 3) {
-					items.push({ step: items.length + 1, text, completed: false });
-				}
+		const numPattern = /^\s*(\d+)[.)]\s+([^\n]+)/gm;
+		for (const match of section.matchAll(numPattern)) {
+			const text = match[2].trim();
+			if (text.length > 3) {
+				items.push({ step: items.length + 1, text, completed: false });
 			}
 		}
 	}

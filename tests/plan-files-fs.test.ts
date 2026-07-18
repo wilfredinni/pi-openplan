@@ -326,7 +326,7 @@ describe("plan-files filesystem operations", () => {
 	});
 
 	describe("replacePlanContent", () => {
-		it("replaces entire content and preserves old as Previous Version", () => {
+		it("replaces entire content without preserving old", () => {
 			createPlanFile(TEST_CWD, "my-plan", "## Old Content\n\nOld body.", {
 				title: "My Plan",
 				status: "draft",
@@ -342,9 +342,9 @@ describe("plan-files filesystem operations", () => {
 
 			expect(result.content).toContain("## New Content");
 			expect(result.content).toContain("New body.");
-			expect(result.content).toContain("## Previous Version");
-			expect(result.content).toContain("## Old Content");
-			expect(result.content).toContain("Old body.");
+			expect(result.content).not.toContain("## Previous Version");
+			expect(result.content).not.toContain("## Old Content");
+			expect(result.content).not.toContain("Old body.");
 			expect(result.metadata.updated).toBeDefined();
 		});
 

@@ -209,7 +209,7 @@ export function registerTools(pi: ExtensionAPI): void {
 		name: "plan_edit",
 		label: "Edit Plan",
 		description:
-			"Edit an existing plan in .pi/plans/. Update a specific section or replace the entire content. Old content preserved as Previous Version appendix on full replace.",
+			"Edit an existing plan in .pi/plans/. Update a specific section or replace the entire content.",
 		promptSnippet: "Edit an existing plan in .pi/plans/",
 		promptGuidelines: [
 			"Use plan_edit to update existing plans instead of writing duplicates with plan_write.",

@@ -245,7 +245,7 @@ describe("tools", () => {
 			expect(pi.sendMessage).toHaveBeenCalled();
 		});
 
-		it("full replace preserves previous version", async () => {
+		it("full replace overwrites content without preserving old version", async () => {
 			const writeCall = (
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(
