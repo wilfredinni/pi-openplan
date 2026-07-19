@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/wilfredinni/pi-openplan/compare/v1.6.0...v1.7.0) (2026-07-19)
+
+
+### Features
+
+* **bash-safety:** expand safe command patterns for npm, yarn, pnpm, ([02473a5](https://github.com/wilfredinni/pi-openplan/commit/02473a5f3c98c5f34fde5535aabd32e49e8f88f4))
+
+
+### Bug Fixes
+
+* KV cache thrash, plan_edit doubling, heading-match robustness ([dafa214](https://github.com/wilfredinni/pi-openplan/commit/dafa214fd56f8bf5156a225c5a7c63ea692aeb61))
+* KV cache thrash, plan_edit doubling, heading-match robustness ([fd6b275](https://github.com/wilfredinni/pi-openplan/commit/fd6b275731072d3664bcac9e53cc51234543af15))
+* update AGENTS.md ([2cdb6ff](https://github.com/wilfredinni/pi-openplan/commit/2cdb6ff5d7eab0ef0fd4285c2dc5b8be103af6b9))
+
 ## [1.6.0](https://github.com/wilfredinni/pi-openplan/compare/v1.5.1...v1.6.0) (2026-06-17)
 
 
