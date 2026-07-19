@@ -62,25 +62,21 @@ ${CONCISENESS_DIRECTIVE}
 - researcher — web research (docs, APIs, best practices)
 - context-builder — in-depth analysis from codebase + requirements`;
 
-// ── Brief Plan Mode Prompt (for subsequent turns) ────────────────────────
-// ~200 tokens. Used on 2nd+ turn in same plan-mode session.
-// Full prompt injected on first turn only.
-
-export const PLAN_MODE_SYSTEM_PROMPT_BRIEF = `[Plan Mode] READ-ONLY. No file edits, no destructive bash.
-
-## Current Task
-Continue research/planning from the current conversation state.
-Use available tools (read, grep, find, ls, subagent, plan_write, plan_edit, plan_question).
-Write plan with plan_write. Edit existing with plan_edit(section=). Do not execute — stays read-only.
-
-${CONCISENESS_DIRECTIVE}`;
-
 // ── Execution Mode Prompt ────────────────────────────────────────────────
 // ~50 tokens (vs v1.0: 68 tokens)
 
 export const EXECUTION_MODE_PROMPT = `[Executing Plan]
 Follow phases in order. Tag each with [DONE:n]. Pause at ⏸️ markers.
 When done, verify against plan criteria.`;
+
+// ── Stable system-prompt append blocks ───────────────────────────────────
+// These are injected into the system prompt via before_agent_start.
+// MUST be byte-identical every turn — any change invalidates prefix KV caches.
+// Dynamic state (todo lists, remaining steps) lives in the UI widget only.
+
+export const PLAN_MODE_SYSTEM_APPEND = `\n\n${PLAN_MODE_SYSTEM_PROMPT}`;
+
+export const EXECUTION_MODE_SYSTEM_APPEND = `\n\n${EXECUTION_MODE_PROMPT}`;
 
 // ── Plan Template ────────────────────────────────────────────────────────
 // Kept as reference for the agent; no longer embedded in the system prompt.

@@ -105,20 +105,36 @@ function resolvePlanPath(cwd: string, filename: string): string | null {
 	const planDir = path.join(cwd, PLANS_DIR);
 	const safeName = sanitizeFilename(filename);
 
+	// 1. Exact match
 	let filepath = path.join(planDir, `${safeName}.md`);
-	if (!fs.existsSync(filepath)) {
-		try {
-			const files = fs.readdirSync(planDir);
-			const match = files.find(
-				(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
-			);
-			if (match) filepath = path.join(planDir, match);
-			else return null;
-		} catch {
-			return null;
+	if (fs.existsSync(filepath)) return filepath;
+
+	try {
+		const files = fs.readdirSync(planDir);
+
+		// 2. Starts-with match (e.g. "2026-07-18-fix-" matches "2026-07-18-fix-bugs")
+		const prefixMatch = files.find((f) => {
+			const base = path.basename(f, ".md");
+			return base.startsWith(safeName);
+		});
+		if (prefixMatch) {
+			filepath = path.join(planDir, prefixMatch);
+			return fs.existsSync(filepath) ? filepath : null;
 		}
+
+		// 3. Substring match (case-insensitive)
+		const fuzzyMatch = files.find(
+			(f) => f.toLowerCase().includes(safeName) && f.endsWith(".md"),
+		);
+		if (fuzzyMatch) {
+			filepath = path.join(planDir, fuzzyMatch);
+			return fs.existsSync(filepath) ? filepath : null;
+		}
+
+		return null;
+	} catch {
+		return null;
 	}
-	return filepath;
 }
 
 /** Escape regex special characters in a string for literal matching. */
@@ -167,8 +183,10 @@ export function readPlanFile(cwd: string, filename: string): PlanFile | null {
 
 /**
  * Replace a section of a plan file by heading name.
- * Finds "## SectionName" heading, replaces content between it and the next
- * "## " heading (or EOF). Preserves all other sections unchanged.
+ * Matches heading text after the leading `#{1,6} ` prefix, case-insensitive.
+ * Strips trailing decoration (⏸️, **PAUSE**, ---, etc.) from the heading match.
+ * Section ends at the next heading of same-or-higher level, or EOF.
+ * Preserves all other sections unchanged.
  */
 export function editPlanSection(
 	cwd: string,
@@ -186,9 +204,19 @@ export function editPlanSection(
 	const raw = fs.readFileSync(filepath, "utf-8");
 	const { metadata: fm, body } = parseFrontmatter(raw);
 
-	// Find the section heading (case-insensitive match on the heading text)
+	// Strip trailing decoration from the section-name parameter so
+	// "Phase 1: Setup ⏸️ **PAUSE**" can be matched with "Phase 1: Setup"
+	const cleanName = sectionName
+		.replace(/\s+⏸.*$/, "")
+		.replace(/\s+\*\*PAUSE\*\*.*$/, "")
+		.replace(/\s+---\s*$/, "")
+		.trim();
+
+	// Match any heading level (1-6) with the given text, case-insensitive.
+	// The matched heading line may carry trailing decoration which we ignore.
+	// Use [^\S\n] (non-newline whitespace) to avoid crossing lines.
 	const sectionRegex = new RegExp(
-		`^##\\s+${escapeRegex(sectionName)}\\s*$`,
+		`^(#{1,6})[^\\S\\n]+${escapeRegex(cleanName)}(?:[^\\S\\n]+[^\\n]*)?[^\\S\\n]*$`,
 		"im",
 	);
 	const match = body.match(sectionRegex);
@@ -197,20 +225,22 @@ export function editPlanSection(
 			`Section "${sectionName}" not found in plan "${filename}". ` +
 				`Available sections: ${
 					body
-						.match(/^##\s+(.+)$/gm)
-						?.map((h) => h.replace(/^##\s+/, ""))
+						.match(/^#{1,6}\s+(.+)$/gm)
+						?.map((h) => h.replace(/^#{1,6}\s+/, ""))
 						.join(", ") || "none"
 				}`,
 		);
 	}
 
+	const headingLevel = match[1].length; // number of # chars
 	const sectionStart = match.index;
 	const afterHeading = sectionStart + match[0].length;
 
-	// Find next ## heading after this section
+	// Find next heading of same-or-higher level (equal or fewer # chars)
 	const rest = body.slice(afterHeading);
-	const nextSectionMatch = rest.match(/^##\s+/m);
-	const nextIndex = nextSectionMatch?.index;
+	const nextBoundaryRegex = new RegExp(`^#{1,${headingLevel}}\\s+`, "m");
+	const nextMatch = rest.match(nextBoundaryRegex);
+	const nextIndex = nextMatch?.index;
 
 	const before = body.slice(0, sectionStart);
 	const after = nextIndex != null ? rest.slice(nextIndex) : "";
@@ -241,7 +271,6 @@ ${after}`.trimEnd();
 
 /**
  * Fully replace the content of a plan file.
- * Old content is preserved as a "Previous Version" appendix at the bottom.
  * Updates the `updated` timestamp in frontmatter.
  */
 export function replacePlanContent(
@@ -257,10 +286,9 @@ export function replacePlanContent(
 	}
 
 	const raw = fs.readFileSync(filepath, "utf-8");
-	const { metadata: fm, body: oldContent } = parseFrontmatter(raw);
+	const { metadata: fm } = parseFrontmatter(raw);
 
-	const previousSection = `\n\n## Previous Version\n\n${oldContent.trim()}`;
-	const newBody = newContent.trim() + previousSection;
+	const newBody = newContent.trim();
 
 	const fullMetadata: PlanMetadata = {
 		title: fm.title ?? path.basename(filepath, ".md"),
@@ -297,7 +325,13 @@ export function listPlans(
 		// Read plan file directly from resolved path — readPlanFile uses
 		// sanitizeFilename which mangles subdirectory paths (e.g. "subdir/plan" → "subdir-plan").
 		const filepath = path.join(planDir, file);
-		if (!fs.existsSync(filepath)) continue;
+
+		// Guard against directories that happen to end in .md (EISDIR)
+		try {
+			if (!fs.statSync(filepath).isFile()) continue;
+		} catch {
+			continue;
+		}
 
 		const raw = fs.readFileSync(filepath, "utf-8");
 		const { metadata, body } = parseFrontmatter(raw);

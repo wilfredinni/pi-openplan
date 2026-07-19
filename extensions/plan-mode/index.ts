@@ -56,6 +56,30 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return md;
 	});
 
+	pi.registerMessageRenderer("plan-complete", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
+	pi.registerMessageRenderer("plan-pause", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
+	pi.registerMessageRenderer("plan-todo-list", (message, _options, _theme) => {
+		const rawContent =
+			typeof message.content === "string" ? message.content : "";
+		const mdTheme = getMarkdownTheme();
+		const md = new Markdown(rawContent, 1, 0, mdTheme);
+		return md;
+	});
+
 	// ── CLI Flag ──────────────────────────────────────────────────────
 
 	pi.registerFlag("plan", {
@@ -115,7 +139,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			enabled: state.planModeEnabled,
 			todos: state.todoItems,
 			executing: state.executionMode,
-			turnCount: state.planModeTurnCount,
 		});
 	}
 
@@ -124,7 +147,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	): void {
 		state.planModeEnabled = true;
 		state.executionMode = false;
-		state.planModeTurnCount = 0;
 		pi.setActiveTools(PLAN_MODE_TOOLS);
 		ctx.ui.notify(
 			`Plan mode enabled — read-only. Tools: read, grep, find, ls, bash (safe), subagent, research, plan_write`,

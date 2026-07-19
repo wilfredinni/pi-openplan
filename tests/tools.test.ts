@@ -26,7 +26,8 @@ describe("tools", () => {
 				(c: unknown[]) => (c[0] as { name: string }).name === "plan_write",
 				// biome-ignore lint/complexity/noBannedTypes: test mock convenience
 			)?.[0] as { execute: Function };
-			const ctx = createMockCtx();
+			// Use unique cwd + overwrite:true to avoid stale-file collisions
+			const ctx = createMockCtx({ cwd: `/tmp/test-write-${testId}` });
 
 			const result = await toolCall.execute(
 				"id1",
@@ -34,6 +35,7 @@ describe("tools", () => {
 					filename: "test-plan",
 					title: "Test Plan",
 					content: "## Phase 1:\nSetup",
+					overwrite: true,
 				},
 				undefined,
 				undefined,
@@ -245,7 +247,7 @@ describe("tools", () => {
 			expect(pi.sendMessage).toHaveBeenCalled();
 		});
 
-		it("full replace preserves previous version", async () => {
+		it("full replace overwrites content without preserving old version", async () => {
 			const writeCall = (
 				pi.registerTool as ReturnType<typeof vi.fn>
 			).mock.calls.find(

@@ -65,16 +65,15 @@ export function registerCommands(
 			}
 
 			const planName = args?.trim();
-			if (planName) {
-				state.todoItems = [];
-			} else {
-				// Preserve auto-extracted plan steps from conversation
-				state.todoItems = state.todoItems ?? [];
-			}
 
 			let planContent = "";
 
 			if (planName) {
+				// Save conversation-extracted todos as fallback in case plan
+				// extraction returns zero phases (e.g. non-standard formatting).
+				const fallbackTodos =
+					state.todoItems.length > 0 ? [...state.todoItems] : [];
+
 				try {
 					const plan = readPlanFile(ctx.cwd, planName);
 					if (plan) {
@@ -83,6 +82,18 @@ export function registerCommands(
 						const extracted = extractTodosFromPlan(plan.content);
 						if (extracted.length > 0) {
 							state.todoItems = extracted;
+						} else if (fallbackTodos.length > 0) {
+							ctx.ui.notify(
+								`No phases detected in "${planName}". Keeping ${fallbackTodos.length} conversation-extracted step(s) as fallback.`,
+								"warning",
+							);
+							state.todoItems = fallbackTodos;
+						} else {
+							ctx.ui.notify(
+								`No phases detected in "${planName}". Execution will proceed without phase tracking.`,
+								"warning",
+							);
+							state.todoItems = [];
 						}
 					} else {
 						ctx.ui.notify(

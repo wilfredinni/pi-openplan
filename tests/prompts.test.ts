@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
 	CONCISENESS_DIRECTIVE,
 	EXECUTION_MODE_PROMPT,
+	EXECUTION_MODE_SYSTEM_APPEND,
+	PLAN_MODE_SYSTEM_APPEND,
 	PLAN_MODE_SYSTEM_PROMPT,
-	PLAN_MODE_SYSTEM_PROMPT_BRIEF,
 	PLAN_TEMPLATE,
 } from "../extensions/plan-mode/prompts.ts";
 
@@ -50,21 +51,39 @@ describe("prompts", () => {
 		});
 	});
 
-	describe("PLAN_MODE_SYSTEM_PROMPT_BRIEF", () => {
+	describe("PLAN_MODE_SYSTEM_APPEND", () => {
 		it("is a non-empty string", () => {
-			expect(PLAN_MODE_SYSTEM_PROMPT_BRIEF).toBeTruthy();
-			expect(typeof PLAN_MODE_SYSTEM_PROMPT_BRIEF).toBe("string");
-			expect(PLAN_MODE_SYSTEM_PROMPT_BRIEF.length).toBeGreaterThan(0);
+			expect(PLAN_MODE_SYSTEM_APPEND).toBeTruthy();
+			expect(typeof PLAN_MODE_SYSTEM_APPEND).toBe("string");
+			expect(PLAN_MODE_SYSTEM_APPEND.length).toBeGreaterThan(0);
 		});
 
-		it("is shorter than full system prompt", () => {
-			expect(PLAN_MODE_SYSTEM_PROMPT_BRIEF.length).toBeLessThan(
-				PLAN_MODE_SYSTEM_PROMPT.length,
-			);
+		it("contains the full PLAN_MODE_SYSTEM_PROMPT", () => {
+			expect(PLAN_MODE_SYSTEM_APPEND).toContain(PLAN_MODE_SYSTEM_PROMPT);
 		});
 
 		it("contains [Plan Mode]", () => {
-			expect(PLAN_MODE_SYSTEM_PROMPT_BRIEF).toContain("[Plan Mode]");
+			expect(PLAN_MODE_SYSTEM_APPEND).toContain("[Plan Mode]");
+		});
+
+		it("contains READ-ONLY", () => {
+			expect(PLAN_MODE_SYSTEM_APPEND).toContain("READ-ONLY");
+		});
+	});
+
+	describe("EXECUTION_MODE_SYSTEM_APPEND", () => {
+		it("is a non-empty string", () => {
+			expect(EXECUTION_MODE_SYSTEM_APPEND).toBeTruthy();
+			expect(typeof EXECUTION_MODE_SYSTEM_APPEND).toBe("string");
+			expect(EXECUTION_MODE_SYSTEM_APPEND.length).toBeGreaterThan(0);
+		});
+
+		it("contains the EXECUTION_MODE_PROMPT", () => {
+			expect(EXECUTION_MODE_SYSTEM_APPEND).toContain(EXECUTION_MODE_PROMPT);
+		});
+
+		it("contains [Executing Plan]", () => {
+			expect(EXECUTION_MODE_SYSTEM_APPEND).toContain("[Executing Plan]");
 		});
 	});
 

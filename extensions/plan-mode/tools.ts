@@ -5,6 +5,8 @@
  * and plan_list tools. plan_question lives in question-prompt.ts.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -46,16 +48,41 @@ export function registerTools(pi: ExtensionAPI): void {
 						"Plan type: feature, fix, refactor, chore (default: feature)",
 				}),
 			),
+			overwrite: Type.Optional(
+				Type.Boolean({
+					description:
+						"Overwrite existing plan file (default: false). Set to true to replace an existing plan; otherwise a collision warning is shown.",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const filename = slugify(params.filename);
-			const planType =
-				params.type === "feature" ||
-				params.type === "fix" ||
-				params.type === "refactor" ||
-				params.type === "chore"
-					? params.type
-					: "feature";
+
+			// Check for existing plan collision (exact filename only — no fuzzy match)
+			const planDir = path.join(ctx.cwd, ".pi", "plans");
+			const exactFilepath = path.join(planDir, `${filename}.md`);
+			if (fs.existsSync(exactFilepath) && !params.overwrite) {
+				const warnMsg =
+					`A plan file already exists for "${filename}". ` +
+					`Use plan_edit to update it, or pass overwrite:true to replace it.`;
+				ctx.ui.notify(warnMsg, "warning");
+				return {
+					content: [{ type: "text", text: warnMsg }],
+					details: { collision: true, filename },
+				};
+			}
+
+			const validTypes = ["feature", "fix", "refactor", "chore"];
+			const planType = validTypes.includes(params.type ?? "")
+				? (params.type as PlanMetadata["type"])
+				: "feature";
+
+			if (params.type && !validTypes.includes(params.type)) {
+				ctx.ui.notify(
+					`Invalid plan type "${params.type}" — defaulting to "feature". Valid types: ${validTypes.join(", ")}`,
+					"warning",
+				);
+			}
 			const metadata: PlanMetadata = {
 				title: params.title,
 				status: "draft",
@@ -209,7 +236,7 @@ export function registerTools(pi: ExtensionAPI): void {
 		name: "plan_edit",
 		label: "Edit Plan",
 		description:
-			"Edit an existing plan in .pi/plans/. Update a specific section or replace the entire content. Old content preserved as Previous Version appendix on full replace.",
+			"Edit an existing plan in .pi/plans/. Update a specific section or replace the entire content.",
 		promptSnippet: "Edit an existing plan in .pi/plans/",
 		promptGuidelines: [
 			"Use plan_edit to update existing plans instead of writing duplicates with plan_write.",
@@ -234,6 +261,13 @@ export function registerTools(pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const sectionName = params.section?.trim();
+
+			// Validate content is non-empty
+			if (!params.content?.trim()) {
+				throw new Error(
+					"Error: plan_edit content must be non-empty. Provide markdown content for the section or full plan.",
+				);
+			}
 
 			const plan = sectionName
 				? editPlanSection(ctx.cwd, params.filename, sectionName, params.content)
